@@ -1,0 +1,6 @@
+- name: vertex
+  tls:
+    sni: "aiplatform.googleapis.com"
+  idle_timeout_ms: 45000
+  endpoints:
+    - "aiplatform.googleapis.com:443"

@@ -1,0 +1,3 @@
+- name: vertex
+  header: Host
+  value: "aiplatform.googleapis.com"

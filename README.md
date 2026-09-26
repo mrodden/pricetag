@@ -40,6 +40,9 @@ CNPG IAM role.
 - `deploy/openshift/`: deployment manifests and operational database assets.
 - `docs/`: OpenShift deployment and database runbooks.
 - `docs/operations/image-provenance.md`: image source and release requirements.
+- `docs/operations/enmaas-it-reference.md`: current EnMaaS images, routes,
+  verified Vertex models, and internal-tool integration APIs.
+- `docs/operations/pr-validation.md`: fast, non-mutating Pull Request checks.
 - `tools/`: deployment-adjacent benchmarks and validation tools.
 - `SOURCE-MAP.md`: provenance and explicit exclusions.
 

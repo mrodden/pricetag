@@ -224,6 +224,7 @@ data:
           # Both clients share GET /v1/models. Select the envelope from the
           # protocol marker sent by Anthropic SDKs; OpenAI clients use the
           # standard OpenAI list envelope.
+          # ENMAAS_VERTEX_ONLY_MODEL_CATALOG
           - filter: model_catalog
             format: anthropic
             path: /v1/models
@@ -245,6 +246,8 @@ data:
                 display_name: "Claude Fable 5 (octo-eng only)"
               - id: rits/zai-org/glm-5-3
                 display_name: "GLM 5.3 (hosted via curvebender)"
+              # EnMaaS adds its Vertex model catalog entry at this marker.
+              # ENMAAS_VERTEX_MODEL_CATALOG
 
           - filter: model_catalog
             format: openai
@@ -275,6 +278,10 @@ data:
             group_metadata_key: "x-tenant-group"
             max_body_bytes: 33554432
 
+          # EnMaaS may narrow the public inference catalog and access policy to
+          # the Vertex-hosted models without changing the shared base profile.
+          # ENMAAS_VERTEX_ONLY_ACCESS
+
           - filter: identity_header_guard
             prefix: "x-tenant-"
 
@@ -283,8 +290,17 @@ data:
           - filter: model_to_header
             header: X-Model
 
+          # EnMaaS resolves the stable public Vertex model ID to the internal
+          # provider target before the Vertex dialect filter runs.
+          # ENMAAS_VERTEX_MODEL_TO_PROVIDER_FILTER
+
+          # Vertex translates only vertex/* target models and leaves every
+          # other supplier's body untouched.
+          # ENMAAS_VERTEX_FILTER
+
           - filter: router
             routes:
+              # ENMAAS_VERTEX_ROUTER_ROUTE
               # Self-hosted Qwen, direct to vLLM; everything else (claude-*)
               # falls through to the anthropic default.
               - path_prefix: "/"
@@ -299,6 +315,8 @@ data:
                 cluster: cb-glm
               - path_prefix: "/"
                 cluster: anthropic
+
+          # ENMAAS_VERTEX_GCP_CREDENTIAL_FILTER
 
           # Rewrite content block types that vLLM's Anthropic endpoint
           # rejects (server_tool_use, server_tool_result) and that Qwen's
@@ -361,6 +379,8 @@ data:
                 value: "${QWEN_ENDPOINT}"
               - name: "anthropic-version"
                 value: "2023-06-01"
+            request_remove:
+              - x-praxis-ai-provider
 
           # Override Host for Anthropic: extra_request_headers (from
           # credential_injection) are applied after headers_to_set, so
@@ -374,6 +394,7 @@ data:
               - name: cb-glm
                 header: Host
                 value: "${CB_GLM_ENDPOINT}"
+              # ENMAAS_VERTEX_HOST_OVERRIDE
 
           - filter: load_balancer
             clusters:
@@ -396,6 +417,7 @@ data:
                 idle_timeout_ms: 45000
                 endpoints:
                   - "${CB_GLM_ENDPOINT}:443"
+              # ENMAAS_VERTEX_UPSTREAM_CLUSTER
 ---
 # NOTE: provider-credentials Secret is created by deploy.sh from
 # env vars (ANTHROPIC_API_KEY, OPENAI_API_KEY). Do NOT include it

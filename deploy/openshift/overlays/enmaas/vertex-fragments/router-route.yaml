@@ -1,0 +1,4 @@
+- path_prefix: "/"
+  headers:
+    x-praxis-ai-provider: vertex
+  cluster: vertex

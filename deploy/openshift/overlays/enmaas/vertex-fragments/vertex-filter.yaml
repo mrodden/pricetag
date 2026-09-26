@@ -1,0 +1,5 @@
+- filter: vertex
+  project: "${VERTEX_PROJECT}"
+  location: global
+  beta_allowlist:
+    - interleaved-thinking-2025-05-14

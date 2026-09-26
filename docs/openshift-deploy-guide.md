@@ -73,7 +73,7 @@
 | AWS region and OIDC issuer (AWS/ROSA) | The cluster region, OIDC issuer, and IAM role must be known before deployment. |
 | Private S3 bucket | Same region as the cluster, versioning enabled, all public access blocked, and server-side encryption enabled. |
 | CNPG backup IAM role | Trusted only by `system:serviceaccount:enmaas:aigateway-pg`; the EnMaaS manifest uses `inheritFromIAMRole`, never static AWS keys. |
-| Egress to `api.anthropic.com:443` / `api.openai.com:443` | praxis dials these directly by DNS name. Verify: `oc run curl --image=curlimages/curl --rm -it -- curl -sI https://api.anthropic.com` in the target namespace. |
+| Provider egress | praxis dials `api.anthropic.com:443` / `api.openai.com:443`; the EnMaaS Vertex deployment also needs `aiplatform.googleapis.com:443` and OAuth token egress. Verify from a pod in the target namespace. |
 | Provider API keys | A real Anthropic key and (optionally) OpenAI key. These go in one Secret; praxis injects them upstream. |
 | Component images | Approved component images must already exist in the target registry. The EnMaaS profile uses mirrored `practice-*` tags; `deploy.sh` does not build images. |
 | Source inputs | Approved component images or pinned source revisions. The three required MaaS CRDs are vendored under `deploy/openshift/crds/`. |
@@ -206,7 +206,9 @@ oc get --raw /.well-known/openid-configuration
 
 `deploy.sh` requires a dedicated target kubeconfig and refuses the production API server.
 It also requires the target server, profile, namespace, storage class, object-store values,
-provider keys, model endpoint hostnames, admin lists, and `CONFIRM_DEPLOYMENT=true`.
+provider keys, model endpoint hostnames, admin lists, and `CONFIRM_DEPLOYMENT=true`. The
+EnMaaS profile additionally requires `VERTEX_PROJECT` and `VERTEX_IMAGE_TAG`; on first
+install or intentional key rotation it requires `VERTEX_SA_KEY_FILE`.
 The EnMaaS invocation is:
 
 ```bash
@@ -220,6 +222,12 @@ export AWS_ROLE_ARN=arn:aws:iam::<account-id>:role/pricetag-enmaas-cnpg-backup
 export COS_BUCKET=pricetag-enmaas-cnpg-<account-id>-usw2
 export COS_ENDPOINT=https://s3.us-west-2.amazonaws.com
 export COS_REGION=us-west-2
+export VERTEX_PROJECT=<gcp-project-id>
+export VERTEX_IMAGE_TAG=practice-<immutable-feature-image-sha>
+# Required only to create vertex-sa-key on first install or rotate it:
+export VERTEX_SA_KEY_FILE=/secure/path/to/service-account.json
+# Set only when rotating the Vertex key; ROTATE_SECRETS=true rotates all managed Secrets.
+export ROTATE_VERTEX_SA_KEY=false
 export CONFIRM_DEPLOYMENT=true
 
 ./deploy/openshift/deploy.sh
@@ -232,6 +240,42 @@ production data, or migrate production secrets automatically. MaaS governance CR
 intentionally not applied because this profile does not deploy the MaaS controller.
 The EnMaaS overlay uses the fork-built MaaS API image with
 `MAAS_SUBSCRIPTION_MODE=standalone`; dogfood and test retain enforced subscription mode.
+
+### 3.3 EnMaaS Vertex routing
+
+The EnMaaS overlay adds Vertex as another supplier behind the existing Praxis
+`unified` listener and canonical `ai-gateway` Route at `/v1/messages`. It uses
+the existing Praxis Deployment and API endpoint: clients send the stable model
+ID `claude-sonnet-4-5`; Praxis maps it to the Vertex route and internal target
+model. Existing Claude, Qwen, and GLM model routes continue to use their
+current suppliers. Other profiles do not enable the Vertex route or mount its
+service-account Secret.
+
+Before deploying EnMaaS Vertex:
+
+1. Set `PRAXIS_SOURCE_SHA` to the full SHA of a pushed
+   `redhat-et/praxis-ai` commit containing the GCP key-file credential filter,
+   Vertex dialect filter, model-to-provider mapping, and `token_count`
+   StreamBuffer fix. EnMaaS deployment builds that ET commit in OpenShift with
+   `PRAXIS_AI_FEATURES=full,gcp-adc-filter` by default and deploys its
+   commit-derived `practice-*` tag. Record the source SHA and the image digest
+   printed by `build-praxis-et.sh`. To use an already-built/mirrored image,
+   set `BUILD_PRAXIS_IMAGE=false` and provide its `VERTEX_IMAGE_TAG`; ensure it
+   came from the same pushed source commit and feature set.
+2. Set `VERTEX_PROJECT` to the GCP project used by the service account.
+3. For the initial install, set `VERTEX_SA_KEY_FILE` to the service-account
+   JSON file. The deploy script creates `vertex-sa-key` from that file and
+   mounts it into the existing Praxis pods. The Secret is preserved on later
+   runs. To rotate only this key, set `ROTATE_VERTEX_SA_KEY=true` and provide
+   the replacement file. `ROTATE_SECRETS=true` still intentionally rotates all
+   managed Secrets. Key contents are never placed in a manifest.
+
+This is the initial key-file credential path; GCP Workload Identity Federation
+is not included. Requests use the existing Anthropic Messages endpoint and are
+authenticated by PriceTag API keys, pass through the EnMaaS model-access policy,
+and meter through the existing gateway path. Clients use the stable public ID
+`claude-sonnet-4-5`; Praxis maps it to the internal `vertex/claude-sonnet-4-5`
+target and restores the public ID in responses and metering.
 
 ---
 

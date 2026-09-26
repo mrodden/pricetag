@@ -17,9 +17,15 @@ images:
     newTag: practice-05e9d104
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/praxis-ai
-    newTag: practice-9be8880c
+    newTag: ${VERTEX_IMAGE_TAG}
 
 patches:
+  - path: praxis-vertex-secret-mount.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: praxis
   - target:
       group: apps
       version: v1
@@ -42,20 +48,69 @@ patches:
       metadata:
         name: llm-katan
   - target:
+      group: route.openshift.io
+      version: v1
+      kind: Route
+      name: ai-gateway-chat-completions
+    patch: |-
+      $patch: delete
+      apiVersion: route.openshift.io/v1
+      kind: Route
+      metadata:
+        name: ai-gateway-chat-completions
+  - target:
+      group: route.openshift.io
+      version: v1
+      kind: Route
+      name: ai-gateway-responses
+    patch: |-
+      $patch: delete
+      apiVersion: route.openshift.io/v1
+      kind: Route
+      metadata:
+        name: ai-gateway-responses
+  - target:
+      group: route.openshift.io
+      version: v1
+      kind: Route
+      name: ai-gateway-conversations
+    patch: |-
+      $patch: delete
+      apiVersion: route.openshift.io/v1
+      kind: Route
+      metadata:
+        name: ai-gateway-conversations
+  - target:
       group: apps
       version: v1
       kind: Deployment
       name: praxis
     patch: |-
-      - op: remove
-        path: /spec/template/spec/containers/0/ports/1
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: praxis
+      spec:
+        template:
+          spec:
+            containers:
+              - name: praxis
+                ports:
+                  - containerPort: 8082
+                    $patch: delete
   - target:
       version: v1
       kind: Service
       name: praxis
     patch: |-
-      - op: remove
-        path: /spec/ports/1
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: praxis
+      spec:
+        ports:
+          - port: 8082
+            $patch: delete
   - target:
       group: apps
       version: v1
@@ -72,3 +127,14 @@ patches:
         value:
           name: METRICS_SECURE
           value: "false"
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: metering-service
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: MONTHLY_TOKEN_QUOTA
+          value: "10000000000"

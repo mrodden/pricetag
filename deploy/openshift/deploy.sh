@@ -102,6 +102,30 @@ if ! secret_exists provider-credentials || [[ "$ROTATE_SECRETS" == true ]]; then
     --dry-run=client -o yaml | oc apply -f -
 fi
 
+# The EnMaaS Praxis deployment mounts its service-account JSON from a
+# Secret. Preserve existing key material on reruns; rotate only from an
+# explicitly supplied file when ROTATE_SECRETS=true.
+if [[ "$PROFILE" == enmaas ]]; then
+  [[ -n "${VERTEX_PROJECT:-}" ]] || die "VERTEX_PROJECT is required for PROFILE=enmaas"
+  : "${PRAXIS_SOURCE_SHA:?Set PRAXIS_SOURCE_SHA to a pushed ET praxis-ai commit}"
+  if [[ "${BUILD_PRAXIS_IMAGE:-true}" == true ]]; then
+    VERTEX_IMAGE_TAG="$(NAMESPACE="$NAMESPACE" PRAXIS_SOURCE_SHA="$PRAXIS_SOURCE_SHA" \
+      PRAXIS_SOURCE_REPO="${PRAXIS_SOURCE_REPO:-https://github.com/redhat-et/praxis-ai.git}" \
+      PRAXIS_AI_FEATURES="${PRAXIS_AI_FEATURES:-full,gcp-adc-filter}" \
+      "$SCRIPT_DIR/build-praxis-et.sh")"
+    export VERTEX_IMAGE_TAG
+  else
+    : "${VERTEX_IMAGE_TAG:?Set VERTEX_IMAGE_TAG when BUILD_PRAXIS_IMAGE=false}"
+  fi
+  if ! secret_exists vertex-sa-key || [[ "$ROTATE_SECRETS" == true || "${ROTATE_VERTEX_SA_KEY:-false}" == true ]]; then
+    [[ -n "${VERTEX_SA_KEY_FILE:-}" && -f "$VERTEX_SA_KEY_FILE" ]] || \
+      die "VERTEX_SA_KEY_FILE must point to the Vertex service-account JSON file to create/rotate vertex-sa-key"
+    oc -n "$NAMESPACE" create secret generic vertex-sa-key \
+      --from-file="sa-key.json=$VERTEX_SA_KEY_FILE" \
+      --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
+  fi
+fi
+
 if [[ "$PROFILE" != enmaas ]] && \
   (! secret_exists cnpg-backup-cos || [[ "$ROTATE_SECRETS" == true ]]); then
   for name in COS_ACCESS_KEY_ID COS_SECRET_ACCESS_KEY; do
@@ -172,17 +196,38 @@ if [[ -n "$binding_name" ]] && \
   oc delete clusterrolebinding "$binding_name"
 fi
 
-oc kustomize "$PROFILE_DIR" |
-  envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL}" | oc apply -f -
+RENDER_DIR="$(mktemp -d)"
+trap 'rm -rf "$RENDER_DIR"' EXIT
+oc kustomize "$PROFILE_DIR" > "$RENDER_DIR/manifests.yaml"
+if [[ "$PROFILE" == enmaas ]]; then
+  command -v python3 >/dev/null || die "python3 is required to render the EnMaaS Vertex config fragments"
+  python3 "$SCRIPT_DIR/render-enmaas-vertex.py" \
+    "$RENDER_DIR/manifests.yaml" "$PROFILE_DIR/vertex-fragments" \
+    > "$RENDER_DIR/with-vertex.yaml"
+  mv "$RENDER_DIR/with-vertex.yaml" "$RENDER_DIR/manifests.yaml"
+fi
+envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${VERTEX_PROJECT} \${VERTEX_IMAGE_TAG}" \
+  < "$RENDER_DIR/manifests.yaml" | oc apply -f -
 
 oc -n "$NAMESPACE" rollout status deployment/maas-api --timeout=180s
 oc -n "$NAMESPACE" rollout status deployment/metering-service --timeout=180s
 oc -n "$NAMESPACE" rollout status deployment/praxis --timeout=180s
 
 # Wait for every path route to be admitted before retiring old gateway hosts.
+# Route status keeps conditions under status.ingress, so oc wait's generic
+# condition handler is not reliable here.
 for route in ai-gateway ai-gateway-chat-completions ai-gateway-responses \
   ai-gateway-conversations ai-gateway-models; do
-  oc -n "$NAMESPACE" wait --for=condition=Admitted "route/$route" --timeout=120s
+  admitted=false
+  for _ in {1..120}; do
+    if [[ "$(oc -n "$NAMESPACE" get route "$route" \
+      -o jsonpath='{.status.ingress[0].conditions[?(@.type=="Admitted")].status}')" == True ]]; then
+      admitted=true
+      break
+    fi
+    sleep 1
+  done
+  [[ "$admitted" == true ]] || die "route was not admitted: $route"
 done
 
 # Remove the former public gateway hostnames after the canonical path-routed
