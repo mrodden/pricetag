@@ -20,6 +20,9 @@ export QWEN_ENDPOINT=qwen.ci.example.com
 export CB_GLM_ENDPOINT=glm.ci.example.com
 export RDS_EGRESS_CIDR=192.0.2.1/32
 export METERING_MODEL_POLICY_CHECK=true
+export KUBE_DNS_SERVICE_IP=172.30.0.10
+export KUBE_API_SERVICE_IP=172.30.0.1
+export KUBE_API_ENDPOINT_IP=172.20.0.1
 
 cd "$ROOT_DIR"
 failures=()
@@ -46,7 +49,7 @@ else
       >"$TMP_DIR/enmaas-vertex.yaml"; then
     fail "EnMaaS Vertex fragment rendering failed"
   else
-envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_DIGEST} ${METERING_IMAGE_DIGEST} ${RDS_EGRESS_CIDR}' \
+envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_DIGEST} ${METERING_IMAGE_DIGEST} ${RDS_EGRESS_CIDR} ${KUBE_DNS_SERVICE_IP} ${KUBE_API_SERVICE_IP} ${KUBE_API_ENDPOINT_IP}' \
       <"$TMP_DIR/enmaas-vertex.yaml" >"$TMP_DIR/enmaas-rendered.yaml"
     yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' \
       "$TMP_DIR/enmaas-rendered.yaml" >"$TMP_DIR/praxis.yaml" || fail "Praxis ConfigMap data is missing"
@@ -131,6 +134,19 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
       fail "$policy does not allow the configured RDS CIDR on TCP/5432"
     fi
   done
+
+  if ! yq -e "select(.kind == \"NetworkPolicy\" and .metadata.name == \"enmaas-allow-dns\") | .spec.egress[] | select(.to[]?.ipBlock.cidr == \"$KUBE_DNS_SERVICE_IP/32\") | .ports[] | select(.protocol == \"UDP\" and .port == 53)" \
+    "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+    fail "DNS service egress is not allowed"
+  fi
+  if ! yq -e 'select(.kind == "NetworkPolicy" and .metadata.name == "enmaas-allow-router-praxis") | .spec.ingress[].ports[] | select(.protocol == "TCP" and .port == 8081)' \
+    "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+    fail "Praxis OpenAI listener ingress is not allowed from the router"
+  fi
+  if ! yq -e 'select(.kind == "NetworkPolicy" and .metadata.name == "enmaas-allow-cnpg-operator") | .spec.ingress[].ports[] | select(.protocol == "TCP" and .port == 8000)' \
+    "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+    fail "CNPG operator status ingress is not allowed"
+  fi
 
   if ! yq -e 'select(.kind == "Deployment" and .metadata.name == "metering-service") | .spec.template.spec.containers[0].env[] | select(.name == "DASHBOARD_USE_ROLLUPS" and .value == "false")' \
     "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then

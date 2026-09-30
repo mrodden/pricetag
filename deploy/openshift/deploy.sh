@@ -136,10 +136,16 @@ fi
 
 ROUTE_DOMAIN="$(oc get ingress.config.openshift.io cluster -o jsonpath='{.spec.domain}')"
 [[ -n "$ROUTE_DOMAIN" ]] || die "could not determine the OpenShift route domain"
+KUBE_DNS_SERVICE_IP="$(oc -n openshift-dns get service dns-default -o jsonpath='{.spec.clusterIP}')"
+KUBE_API_SERVICE_IP="$(oc -n default get service kubernetes -o jsonpath='{.spec.clusterIP}')"
+KUBE_API_ENDPOINT_IP="$(oc -n default get endpoints kubernetes -o jsonpath='{.subsets[0].addresses[0].ip}')"
+for value in KUBE_DNS_SERVICE_IP KUBE_API_SERVICE_IP KUBE_API_ENDPOINT_IP; do
+  [[ "${!value}" =~ ^[0-9]+(\.[0-9]+){3}$ ]] || die "$value is not a valid IPv4 address"
+done
 GATEWAY_HOST="${GATEWAY_HOST:-ai-gateway-${NAMESPACE}.${ROUTE_DOMAIN}}"
 GATEWAY_URL="${GATEWAY_URL:-https://${GATEWAY_HOST}}"
 DASHBOARD_HOST="${DASHBOARD_HOST:-dashboard-${NAMESPACE}.${ROUTE_DOMAIN}}"
-export GATEWAY_HOST GATEWAY_URL DASHBOARD_HOST
+export GATEWAY_HOST GATEWAY_URL DASHBOARD_HOST KUBE_DNS_SERVICE_IP KUBE_API_SERVICE_IP KUBE_API_ENDPOINT_IP
 
 if [[ "$PROFILE" == enmaas ]]; then
   : "${AWS_ROLE_ARN:?Set AWS_ROLE_ARN to the EnMaaS CNPG backup role ARN}"
@@ -396,7 +402,7 @@ if [[ "$PROFILE" == enmaas ]]; then
     > "$RENDER_DIR/with-vertex.yaml"
   mv "$RENDER_DIR/with-vertex.yaml" "$RENDER_DIR/manifests.yaml"
 fi
-envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_DIGEST} \${METERING_IMAGE_DIGEST} \${RDS_EGRESS_CIDR}" \
+envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_DIGEST} \${METERING_IMAGE_DIGEST} \${RDS_EGRESS_CIDR} \${KUBE_DNS_SERVICE_IP} \${KUBE_API_SERVICE_IP} \${KUBE_API_ENDPOINT_IP}" \
   < "$RENDER_DIR/manifests.yaml" | oc apply -f -
 
 # The dashboard Route receives its host from OpenShift. Pass that canonical

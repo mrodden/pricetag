@@ -38,17 +38,29 @@ spec:
     - Egress
   egress:
     - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
+        - ipBlock:
+            cidr: ${KUBE_DNS_SERVICE_IP}/32
       ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
           port: 53
+        - protocol: UDP
+          port: 5353
+        - protocol: TCP
+          port: 5353
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+          podSelector:
+            matchLabels:
+              dns.operator.openshift.io/daemonset-dns: default
+      ports:
+        - protocol: UDP
+          port: 5353
+        - protocol: TCP
+          port: 5353
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -68,6 +80,8 @@ spec:
       ports:
         - protocol: TCP
           port: 8084
+        - protocol: TCP
+          port: 8081
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -158,6 +172,30 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  name: enmaas-allow-maas-api-kube-api
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: maas-api
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: ${KUBE_API_SERVICE_IP}/32
+      ports:
+        - protocol: TCP
+          port: 443
+    - to:
+        - ipBlock:
+            cidr: ${KUBE_API_ENDPOINT_IP}/32
+      ports:
+        - protocol: TCP
+          port: 6443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: enmaas-allow-metering-rds-egress
 spec:
   podSelector:
@@ -172,6 +210,49 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: enmaas-allow-cnpg-kube-api
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: aigateway-pg
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: ${KUBE_API_SERVICE_IP}/32
+      ports:
+        - protocol: TCP
+          port: 443
+    - to:
+        - ipBlock:
+            cidr: ${KUBE_API_ENDPOINT_IP}/32
+      ports:
+        - protocol: TCP
+          port: 6443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: enmaas-allow-cnpg-operator
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: aigateway-pg
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+      ports:
+        - protocol: TCP
+          port: 8000
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

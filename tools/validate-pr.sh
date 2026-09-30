@@ -18,6 +18,9 @@ export GATEWAY_URL=https://$GATEWAY_HOST
 export DASHBOARD_HOST=dashboard-enmaas.apps.ci.example.com
 export RDS_EGRESS_CIDR=192.0.2.1/32
 export METERING_MODEL_POLICY_CHECK=true
+export KUBE_DNS_SERVICE_IP=172.30.0.10
+export KUBE_API_SERVICE_IP=172.30.0.1
+export KUBE_API_ENDPOINT_IP=172.20.0.1
 export QWEN_ENDPOINT=qwen.ci.example.com
 export CB_GLM_ENDPOINT=glm.ci.example.com
 
@@ -54,7 +57,7 @@ python3 deploy/openshift/render-enmaas-vertex.py \
   "$TMP_DIR/enmaas-kustomized.yaml" \
   deploy/openshift/overlays/enmaas/vertex-fragments \
   >"$TMP_DIR/enmaas-vertex.yaml"
-envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_DIGEST} ${METERING_IMAGE_DIGEST} ${RDS_EGRESS_CIDR}' \
+envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_DIGEST} ${METERING_IMAGE_DIGEST} ${RDS_EGRESS_CIDR} ${KUBE_DNS_SERVICE_IP} ${KUBE_API_SERVICE_IP} ${KUBE_API_ENDPOINT_IP}' \
   <"$TMP_DIR/enmaas-vertex.yaml" >"$TMP_DIR/enmaas-rendered.yaml"
 yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' \
   "$TMP_DIR/enmaas-rendered.yaml" >"$TMP_DIR/praxis.yaml"
@@ -103,10 +106,15 @@ while IFS= read -r path; do
   esac
 done <<<"$dashboard_paths"
 
-for path in /api/v1/usage /api/v1/model-policies; do
+  for path in /api/v1/usage /api/v1/model-policies; do
   yq -e 'select(.kind == "Route" and .spec.host == "'"$DASHBOARD_HOST"'" and .spec.path == "'"$path"'") | select(.spec.tls.termination == "edge" and .spec.tls.insecureEdgeTerminationPolicy == "Redirect")' \
     "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
-done
+  done
+
+yq -e 'select(.kind == "NetworkPolicy" and .metadata.name == "enmaas-allow-router-praxis") | .spec.ingress[].ports[] | select(.protocol == "TCP" and .port == 8081)' \
+  "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
+yq -e 'select(.kind == "NetworkPolicy" and .metadata.name == "enmaas-allow-cnpg-operator") | .spec.ingress[].ports[] | select(.protocol == "TCP" and .port == 8000)' \
+  "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
 
 for policy in enmaas-allow-maas-api-rds-egress enmaas-allow-metering-rds-egress; do
   yq -e "select(.kind == \"NetworkPolicy\" and .metadata.name == \"$policy\") | .spec.egress[] | select(.to[]?.ipBlock.cidr == \"$RDS_EGRESS_CIDR\") | .ports[] | select(.protocol == \"TCP\" and .port == 5432)" \

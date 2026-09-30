@@ -492,12 +492,15 @@ spec:
               cpu: 1000m
               memory: 256Mi
           readinessProbe:
-            httpGet:
-              host: 127.0.0.1
-              path: /healthy
-              port: 9901
+            exec:
+              command:
+                - wget
+                - -qO-
+                - http://127.0.0.1:9901/healthy
             initialDelaySeconds: 2
             periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
       volumes:
         - name: config
           configMap:
