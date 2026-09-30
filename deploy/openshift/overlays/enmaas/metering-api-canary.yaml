@@ -41,23 +41,8 @@ spec:
                   fieldPath: metadata.namespace
             - name: MONTHLY_TOKEN_QUOTA
               value: "10000000000"
-            - name: USAGE_REPORT_API_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: metering-partner-api
-                  key: usage-report
-            - name: MODEL_POLICY_API_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: metering-partner-api
-                  key: model-policy
             # PARTNER_USER_KEY_GROUP is intentionally absent: canary runs keep
-            # the key-minting endpoints at 503 unless set explicitly for a test.
-            - name: USER_MANAGEMENT_API_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: metering-user-management-api
-                  key: token
+            # key operations at 503 unless set explicitly for a test.
           resources:
             requests:
               cpu: 50m

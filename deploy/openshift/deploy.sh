@@ -15,8 +15,6 @@ DATABASE_BACKEND="${DATABASE_BACKEND:-cnpg}"
 METERING_MODEL_POLICY_CHECK="${METERING_MODEL_POLICY_CHECK:-false}"
 export METERING_MODEL_POLICY_CHECK
 METERING_INTERNAL_AUTH_CHANGED=false
-METERING_PARTNER_API_CHANGED=false
-METERING_USER_MANAGEMENT_API_CHANGED=false
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROFILE_DIR="$SCRIPT_DIR/overlays/$PROFILE"
 
@@ -300,48 +298,6 @@ if [[ "$PROFILE" == enmaas ]] && \
   METERING_INTERNAL_AUTH_CHANGED=true
 fi
 
-# External usage-report and user-model-policy APIs each require their own
-# bearer credential. Preserve existing credentials on reruns; rotate only when
-# explicitly requested. Values may be supplied by a secret manager, otherwise
-# generate high-entropy tokens without printing them to the console.
-if [[ "$PROFILE" == enmaas ]] && \
-   (! secret_exists metering-partner-api || [[ "${ROTATE_METERING_PARTNER_API_SECRETS:-false}" == true ]]); then
-  (
-    umask 077
-    secret_dir="$(mktemp -d)"
-    trap 'rm -rf "$secret_dir"' EXIT
-    usage_report_secret="${USAGE_REPORT_API_SECRET:-$(openssl rand -hex 32)}"
-    model_policy_secret="${MODEL_POLICY_API_SECRET:-$(openssl rand -hex 32)}"
-    printf '%s' "$usage_report_secret" >"$secret_dir/usage-report"
-    printf '%s' "$model_policy_secret" >"$secret_dir/model-policy"
-    unset usage_report_secret model_policy_secret USAGE_REPORT_API_SECRET MODEL_POLICY_API_SECRET
-    oc -n "$NAMESPACE" create secret generic metering-partner-api \
-      --from-file=usage-report="$secret_dir/usage-report" \
-      --from-file=model-policy="$secret_dir/model-policy" \
-      --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
-  )
-  METERING_PARTNER_API_CHANGED=true
-fi
-
-# User directory and key issuance have a dedicated credential: this secret can
-# mutate user tags and mint/revoke MaaS keys, so it is not shared with report or
-# model-policy consumers. Preserve it on reruns and rotate only deliberately.
-if [[ "$PROFILE" == enmaas ]] && \
-   (! secret_exists metering-user-management-api || [[ "${ROTATE_METERING_USER_MANAGEMENT_API_SECRET:-false}" == true ]]); then
-  (
-    umask 077
-    secret_dir="$(mktemp -d)"
-    trap 'rm -rf "$secret_dir"' EXIT
-    user_management_secret="${USER_MANAGEMENT_API_SECRET:-$(openssl rand -hex 32)}"
-    printf '%s' "$user_management_secret" >"$secret_dir/token"
-    unset user_management_secret USER_MANAGEMENT_API_SECRET
-    oc -n "$NAMESPACE" create secret generic metering-user-management-api \
-      --from-file=token="$secret_dir/token" \
-      --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
-  )
-  METERING_USER_MANAGEMENT_API_CHANGED=true
-fi
-
 # Cluster-scoped CRDs and the pinned CNPG operator are apply-safe. The operator
 # is installed once per cluster; the namespaced Cluster is safe to reconcile.
 for crd in "$SCRIPT_DIR"/crds/*.yaml; do
@@ -441,6 +397,7 @@ oc -n "$NAMESPACE" set env deployment/metering-service \
 # alone leaves running pods on the previous pipelines. Pin the checksum of the
 # applied config on the pod template: a changed config rolls Praxis through its
 # normal RollingUpdate, while an unchanged config does not restart anything.
+>>>>>>> 5578a55 (refactor: delegate partner API auth to OpenShift)
 if [[ "$PROFILE" == enmaas ]]; then
   praxis_config_checksum="$(oc -n "$NAMESPACE" get configmap praxis-config \
     -o jsonpath='{.data.praxis\.yaml}' | sha256_hex)"
@@ -464,12 +421,13 @@ if [[ "$PROFILE" == enmaas ]]; then
   fi
 fi
 
-# One restart covers every credential created or rotated in this run.
+# Internal-auth rotation still needs an explicit Metering restart; Praxis
+# config changes are rolled by the checksum annotation above.
 if [[ "$PROFILE" == enmaas && "$METERING_INTERNAL_AUTH_CHANGED" == true ]]; then
   oc -n "$NAMESPACE" rollout restart deployment/praxis
 fi
 if [[ "$PROFILE" == enmaas ]] && \
-   [[ "$METERING_INTERNAL_AUTH_CHANGED" == true || "$METERING_PARTNER_API_CHANGED" == true || "$METERING_USER_MANAGEMENT_API_CHANGED" == true ]]; then
+   [[ "$METERING_INTERNAL_AUTH_CHANGED" == true ]]; then
   oc -n "$NAMESPACE" rollout restart deployment/metering-service
 fi
 

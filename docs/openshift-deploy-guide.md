@@ -366,22 +366,17 @@ oc create secret generic cnpg-backup-cos -n "$NS" \
 The EnMaaS dashboard host exposes three path-scoped HTTPS APIs for external
 service integrations:
 
-| API | Methods and path | Credential |
-|-----|------------------|------------|
-| User directory and MaaS keys | `GET`, `POST /api/v1/users`; `GET`, `PUT`, `DELETE /api/v1/users/{user_id}`; `GET`, `POST /api/v1/users/{user_id}/keys`; `DELETE /api/v1/users/{user_id}/keys/{key_id}`; `POST /api/v1/users/{user_id}/reactivate` | `USER_MANAGEMENT_API_SECRET` |
-| Batch user usage report | `POST /api/v1/usage/reports` | `USAGE_REPORT_API_SECRET` |
-| User model allowlist | `GET`, `PUT`, `DELETE /api/v1/model-policies/users/{user_id}/allowlist` | `MODEL_POLICY_API_SECRET` |
+| API | Methods and path | Route authentication |
+|-----|------------------|---------------------|
+| User directory and MaaS keys | `GET`, `POST /api/v1/users`; `GET`, `PUT`, `DELETE /api/v1/users/{user_id}`; `GET`, `POST /api/v1/users/{user_id}/keys`; `DELETE /api/v1/users/{user_id}/keys/{key_id}`; `POST /api/v1/users/{user_id}/reactivate` | OpenShift Route/AuthPolicy |
+| Batch user usage report | `POST /api/v1/usage/reports` | OpenShift Route/AuthPolicy |
+| User model allowlist | `GET`, `PUT`, `DELETE /api/v1/model-policies/users/{user_id}/allowlist` | OpenShift Route/AuthPolicy |
 
-The EnMaaS deploy script creates 256-bit bearer tokens using protected
-temporary files and preserves them on normal reruns. The usage and model-policy
-credentials are stored in `metering-partner-api`; user CRUD and key issuance
-use the separate `metering-user-management-api` Secret. Give each token only to
-its intended backend through the approved secret-distribution channel. Never
-put tokens in browser code, URLs, configuration maps, or source control. Rotate
-the first pair with `ROTATE_METERING_PARTNER_API_SECRETS=true`, and rotate the
-user-management credential with
-`ROTATE_METERING_USER_MANAGEMENT_API_SECRET=true`; update the corresponding
-consumer after rotation.
+The Metering listener intentionally does not authenticate these partner paths.
+The OpenShift Route/AuthPolicy must authenticate the Atlas/AIR/AIBH caller and
+must prevent direct Service or port-forward bypass. Do not distribute a
+Metering bearer token; the route owner is responsible for the workload
+identity/mTLS or equivalent AuthPolicy and any IP restrictions.
 
 Partner key operations (list, mint, revoke, deactivate) additionally need
 `PARTNER_USER_KEY_GROUP`, the MaaS group presented for every key call. It has
@@ -765,6 +760,7 @@ spec:
 > `deploy.sh` pins a `pricetag.io/praxis-config-checksum` annotation on the Praxis pod
 > template from the applied ConfigMap, so a deploy that changes the config rolls Praxis
 > automatically (RollingUpdate) and an unchanged config restarts nothing.
+>>>>>>> 5578a55 (refactor: delegate partner API auth to OpenShift)
 
 ### 4.8 metering-service (PriceTag) + RBAC + route
 

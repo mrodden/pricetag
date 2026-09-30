@@ -110,18 +110,6 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
     esac
   done <<<"$dashboard_paths"
 
-  for secret_env in USAGE_REPORT_API_SECRET MODEL_POLICY_API_SECRET; do
-    if ! yq -e "select(.kind == \"Deployment\" and .metadata.name == \"metering-service\") | .spec.template.spec.containers[0].env[] | select(.name == \"$secret_env\" and .valueFrom.secretKeyRef.name == \"metering-partner-api\")" \
-      "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
-      fail "metering-service $secret_env must come from metering-partner-api Secret"
-    fi
-  done
-
-  if ! yq -e 'select(.kind == "Deployment" and .metadata.name == "metering-service") | .spec.template.spec.containers[0].env[] | select(.name == "USER_MANAGEMENT_API_SECRET" and .valueFrom.secretKeyRef.name == "metering-user-management-api" and .valueFrom.secretKeyRef.key == "token")' \
-    "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
-    fail "metering-service USER_MANAGEMENT_API_SECRET must come from metering-user-management-api Secret"
-  fi
-
   if grep -Eq -- '--from-literal=(usage-report|model-policy)=' deploy/openshift/deploy.sh; then
     fail "partner bearer tokens must not be passed in process arguments"
   fi
