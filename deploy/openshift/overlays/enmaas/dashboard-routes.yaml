@@ -218,7 +218,9 @@ spec:
   tls: { termination: edge }
 ---
 # Partner API paths are path-scoped to avoid exposing the metering service's
-# entire listener. The handlers require their endpoint-specific bearer tokens.
+# entire listener. Authentication is enforced by the OpenShift Route/AuthPolicy
+# boundary; the Metering handlers intentionally do not implement app-level
+# bearer-token authentication.
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
@@ -253,7 +255,7 @@ metadata:
   name: dashboard-api-users
   labels: { app: metering-service }
   annotations:
-    # This path can mint API keys behind one static bearer, so it gets
+    # This path can mint API keys behind the Route/AuthPolicy boundary, so it gets
     # per-client rate limiting the read-only partner routes do not need.
     # Before the credential is handed out, also pin the callers' egress
     # ranges here:  haproxy.router.openshift.io/ip_whitelist: "<cidr> <cidr>"

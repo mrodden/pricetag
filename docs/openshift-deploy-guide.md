@@ -762,7 +762,6 @@ spec:
 > `deploy.sh` pins a `pricetag.io/praxis-config-checksum` annotation on the Praxis pod
 > template from the applied ConfigMap, so a deploy that changes the config rolls Praxis
 > automatically (RollingUpdate) and an unchanged config restarts nothing.
->>>>>>> 5578a55 (refactor: delegate partner API auth to OpenShift)
 
 ### 4.8 metering-service (PriceTag) + RBAC + route
 

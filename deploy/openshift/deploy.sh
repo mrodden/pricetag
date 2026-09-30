@@ -397,7 +397,6 @@ oc -n "$NAMESPACE" set env deployment/metering-service \
 # alone leaves running pods on the previous pipelines. Pin the checksum of the
 # applied config on the pod template: a changed config rolls Praxis through its
 # normal RollingUpdate, while an unchanged config does not restart anything.
->>>>>>> 5578a55 (refactor: delegate partner API auth to OpenShift)
 if [[ "$PROFILE" == enmaas ]]; then
   praxis_config_checksum="$(oc -n "$NAMESPACE" get configmap praxis-config \
     -o jsonpath='{.data.praxis\.yaml}' | sha256_hex)"
