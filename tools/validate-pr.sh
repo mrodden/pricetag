@@ -11,8 +11,11 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 export NAMESPACE=enmaas
 export VERTEX_PROJECT=ci-placeholder-project
 export VERTEX_IMAGE_TAG=practice-ci
+export METERING_IMAGE_DIGEST=sha256:0000000000000000000000000000000000000000000000000000000000000000
 export GATEWAY_HOST=ai-gateway-enmaas.apps.ci.example.com
 export GATEWAY_URL=https://$GATEWAY_HOST
+export DASHBOARD_HOST=dashboard-enmaas.apps.ci.example.com
+export RDS_EGRESS_CIDR=192.0.2.1/32
 export QWEN_ENDPOINT=qwen.ci.example.com
 export CB_GLM_ENDPOINT=glm.ci.example.com
 
@@ -49,7 +52,7 @@ python3 deploy/openshift/render-enmaas-vertex.py \
   "$TMP_DIR/enmaas-kustomized.yaml" \
   deploy/openshift/overlays/enmaas/vertex-fragments \
   >"$TMP_DIR/enmaas-vertex.yaml"
-envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${VERTEX_PROJECT} ${VERTEX_IMAGE_TAG}' \
+envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_TAG} ${METERING_IMAGE_DIGEST} ${RDS_EGRESS_CIDR}' \
   <"$TMP_DIR/enmaas-vertex.yaml" >"$TMP_DIR/enmaas-rendered.yaml"
 yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' \
   "$TMP_DIR/enmaas-rendered.yaml" >"$TMP_DIR/praxis.yaml"
@@ -62,17 +65,42 @@ fi
 echo "== EnMaaS route contract =="
 routes="$(yq -r 'select(.kind == "Route") | .metadata.name' "$TMP_DIR/enmaas-rendered.yaml" | sort)"
 grep -qx 'ai-gateway' <<<"$routes"
+grep -qx 'ai-gateway-chat-completions' <<<"$routes"
+grep -qx 'ai-gateway-responses' <<<"$routes"
+grep -qx 'ai-gateway-conversations' <<<"$routes"
 grep -qx 'ai-gateway-models' <<<"$routes"
-grep -qx 'dashboard' <<<"$routes"
-! grep -Eq 'ai-gateway-(chat-completions|responses|conversations)' <<<"$routes"
+grep -qx 'dashboard-welcome' <<<"$routes"
+grep -qx 'dashboard-page' <<<"$routes"
+! grep -qx 'dashboard' <<<"$routes"
 ! grep -q 'llm-katan' "$TMP_DIR/enmaas-rendered.yaml"
+
+dashboard_paths="$(yq -r -N 'select(.kind == "Route" and .spec.host == "'"$DASHBOARD_HOST"'") | .spec.path' "$TMP_DIR/enmaas-rendered.yaml")"
+while IFS= read -r path; do
+  case "$path" in
+    /welcome|/login|/logout|/health|/ready|/dashboard|/manager|/admin|/routing|/me|/invite|/whoami|/api/v1/whoami|/api/v1/pricing|/api/v1/dashboard|/api/v1/org|/api/v1/me|/api/v1/admin)
+      ;;
+    *)
+      echo "dashboard Route path is not an approved UI path: ${path:-<catch-all>}" >&2
+      exit 1
+      ;;
+  esac
+done <<<"$dashboard_paths"
+
+for policy in enmaas-allow-maas-api-rds-egress enmaas-allow-metering-rds-egress; do
+  yq -e "select(.kind == \"NetworkPolicy\" and .metadata.name == \"$policy\") | .spec.egress[] | select(.to[]?.ipBlock.cidr == \"$RDS_EGRESS_CIDR\") | .ports[] | select(.protocol == \"TCP\" and .port == 5432)" \
+    "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
+done
+
+yq -e 'select(.kind == "Deployment" and .metadata.name == "metering-service") | .spec.template.spec.containers[0].env[] | select(.name == "DASHBOARD_USE_ROLLUPS" and .value == "false")' \
+  "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
 
 echo "== EnMaaS Vertex contract =="
 grep -q 'model_to_provider' "$TMP_DIR/praxis.yaml"
 grep -q 'gcp_adc' "$TMP_DIR/praxis.yaml"
-grep -q 'practice-ci' "$TMP_DIR/enmaas-rendered.yaml"
+grep -q '@sha256:' "$TMP_DIR/enmaas-rendered.yaml"
 grep -q 'claude-sonnet-4-5' "$TMP_DIR/praxis.yaml"
 grep -q 'beta_allowlist' "$TMP_DIR/praxis.yaml"
+grep -q 'internal_auth_file' "$TMP_DIR/praxis.yaml"
 
 echo "== secret-pattern scan =="
 if git grep -n -I -E 'BEGIN (RSA|OPENSSH|EC|DSA) PRIVATE KEY|sk-[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{20,}' -- ':!*.lock'; then

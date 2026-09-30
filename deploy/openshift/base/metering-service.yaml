@@ -14,9 +14,20 @@ spec:
       labels:
         app: metering-service
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: metering-service
           image: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/metering-service:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - containerPort: 8080
           env:

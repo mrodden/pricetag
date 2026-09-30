@@ -17,6 +17,7 @@ spec:
         app.kubernetes.io/name: maas-api
     spec:
       serviceAccountName: maas-api
+      automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
       containers:
@@ -80,6 +81,8 @@ spec:
                 - ALL
             readOnlyRootFilesystem: true
             runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
       terminationGracePeriodSeconds: 30
 ---
 apiVersion: v1

@@ -218,6 +218,8 @@ export STORAGE_CLASS=gp3-csi
 export PRICETAG_KUBECONFIG=/path/to/enmaas-kubeconfig
 export EXPECTED_OC_SERVER=https://<enmaas-api>:443
 export PROTECTED_OC_SERVER=https://<production-api>:<port>
+export GATEWAY_HOST=api.enmaas.devshift.net
+export DASHBOARD_HOST=dashboard.enmaas.devshift.net
 export AWS_ROLE_ARN=arn:aws:iam::<account-id>:role/pricetag-enmaas-cnpg-backup
 export COS_BUCKET=pricetag-enmaas-cnpg-<account-id>-usw2
 export COS_ENDPOINT=https://s3.us-west-2.amazonaws.com
@@ -232,6 +234,29 @@ export CONFIRM_DEPLOYMENT=true
 
 ./deploy/openshift/deploy.sh
 ```
+
+For an externally managed PostgreSQL target such as RDS, set the backend mode
+and provide complete TLS-enabled connection URLs from the secure operations
+environment. The deploy script derives the MaaS, metering, and dashboard read
+Secrets from these values; it never writes them to a manifest:
+
+```bash
+export DATABASE_BACKEND=rds
+export RDS_EXPECTED_HOST='<approved-rds-endpoint>'
+export RDS_EGRESS_CIDR='<rds-subnet-cidr-or-endpoint-/32>'
+export RDS_DATABASE_URL='postgresql://aigateway:<password>@<rds-host>:5432/aigateway?sslmode=require'
+export RDS_READ_DATABASE_URL='postgresql://metering_reader:<password>@<rds-host>:5432/aigateway?sslmode=require'
+./deploy/openshift/deploy.sh
+```
+
+`DATABASE_BACKEND=cnpg` remains the default and keeps the existing CloudNativePG
+path. RDS mode preserves the CNPG resources for rollback but does not point
+applications at `aigateway-pg-rw` or create the CNPG read-replica grant.
+RDS mode is restricted to the `enmaas` profile. The two URLs and any optional
+MaaS/metering overrides must match `RDS_EXPECTED_HOST`, use PostgreSQL TLS, and
+use port 5432. `RDS_EGRESS_CIDR` is rendered into narrow TCP/5432 NetworkPolicies
+for the MaaS API and metering pods; use the RDS subnet CIDR when failover can
+change the endpoint address, rather than a broad network range.
 
 Run this from the repository containing the mirrored EnMaaS image tags. The script
 creates the namespace, CRDs, CNPG operator, database, applications, and Routes in that
@@ -262,7 +287,12 @@ Before deploying EnMaaS Vertex:
    printed by `build-praxis-et.sh`. To use an already-built/mirrored image,
    set `BUILD_PRAXIS_IMAGE=false` and provide its `VERTEX_IMAGE_TAG`; ensure it
    came from the same pushed source commit and feature set.
-2. Set `VERTEX_PROJECT` to the GCP project used by the service account.
+2. Set `VERTEX_PROJECT` to the GCP project in which the enabled Vertex Anthropic
+   models are available and to which the service account has access. Change
+   `VERTEX_PROJECT` and `VERTEX_SA_KEY_FILE` together: rotating only the Secret
+   leaves Praxis configured for the previous project and can make all Vertex
+   callouts fail authorization. The deploy script renders the project and
+   mounts the key as one coordinated rollout.
 3. For the initial install, set `VERTEX_SA_KEY_FILE` to the service-account
    JSON file. The deploy script creates `vertex-sa-key` from that file and
    mounts it into the existing Praxis pods. The Secret is preserved on later

@@ -52,6 +52,8 @@ CNPG IAM role.
 - `docs/operations/enmaas-it-reference.md`: current EnMaaS images, routes,
   verified Vertex models, and internal-tool integration APIs.
 - `docs/operations/pr-validation.md`: fast, non-mutating Pull Request checks.
+- `docs/operations/security-baseline.md`: EnMaaS security controls, evidence,
+  exceptions, and open remediation risks.
 - `tools/`: deployment-adjacent benchmarks and validation tools.
 - `SOURCE-MAP.md`: provenance and explicit exclusions.
 

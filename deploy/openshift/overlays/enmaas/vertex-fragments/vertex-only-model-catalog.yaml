@@ -9,6 +9,9 @@
     - id: claude-sonnet-4-5
       display_name: "Claude Sonnet 4.5 (Vertex AI)"
       owned_by: vertex
+    - id: claude-sonnet-5
+      display_name: "Claude Sonnet 5 (Vertex AI)"
+      owned_by: vertex
     - id: claude-haiku-4-5
       display_name: "Claude Haiku 4.5 (Vertex AI)"
       owned_by: vertex
@@ -43,6 +46,8 @@
           anthropic-version: "2023-06-01"
   models:
     - id: claude-sonnet-4-5
+      owned_by: vertex
+    - id: claude-sonnet-5
       owned_by: vertex
     - id: claude-haiku-4-5
       owned_by: vertex

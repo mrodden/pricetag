@@ -38,6 +38,30 @@ restorable, which covers "give me last month's numbers" and
 
 ## EnMaaS AWS/ROSA backup setup
 
+### EnMaaS RDS transition
+
+As of 2026-09-29, EnMaaS application reads and writes use AWS RDS
+`enmaas-db`; the CNPG cluster remains running only as rollback insurance. The
+CNPG S3/WAL procedure below does not back up the live RDS database.
+
+RDS currently provides Multi-AZ availability, encrypted gp3 storage,
+deletion protection, and seven-day automated backup retention. Before treating
+the migration as complete, verify RDS point-in-time recovery and a restore to
+a disposable instance. Review the current `PubliclyAccessible` setting and
+security groups: database access should be limited to the EnMaaS network and
+approved operators.
+
+The RDS cutover used a final writer drain, a snapshot-consistent `pg_dump`,
+restore into the `aigateway` database, separate application/read-only roles,
+then a coordinated update of `maas-db-config`, `postgresql-credentials`, and
+`metering-readonly-db-url`. Rollback is still possible by restoring those
+connection Secrets and restarting MaaS API and metering while CNPG remains
+available.
+
+Do not decommission CNPG, its storage, or its rollback material until the
+RDS backup/restore drill, ledger idempotency gate, and an observation window
+are complete.
+
 The EnMaaS practice profile is separate from the IBM Cloud production profile.
 It runs in AWS `us-west-2` and uses the AWS S3 bucket configured by
 `deploy/openshift/database/cnpg/10-cluster-enmaas.yaml`:

@@ -10,6 +10,8 @@ spec:
   cluster:
     name: aigateway-pg
   name: metering_reader
+  passwordSecret:
+    name: metering-reader-password
   ensure: present
   login: true
   inherit: true

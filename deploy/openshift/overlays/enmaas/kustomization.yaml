@@ -6,20 +6,33 @@ namespace: enmaas
 resources:
   - namespace.yaml
   - maas-api-rbac-binding.yaml
+  - network-policy.yaml
+  - dashboard-routes.yaml
   - ../../base
 
 images:
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/maas-api
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/maas-api
-    newTag: standalone-1238aafa
+    digest: sha256:bbf5b77a3194ea477f236128d2f1499ac8b89957b0798047d1f97c311a069a97
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/metering-service
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/metering-service
-    newTag: practice-05e9d104
+    digest: ${METERING_IMAGE_DIGEST}
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/praxis-ai
-    newTag: ${VERTEX_IMAGE_TAG}
+    digest: sha256:66207f02fc8190359923bb8b24b10ff6090cc4b353caea90d06672611763ffb9
 
 patches:
+  - target:
+      group: route.openshift.io
+      version: v1
+      kind: Route
+      name: dashboard
+    patch: |-
+      $patch: delete
+      apiVersion: route.openshift.io/v1
+      kind: Route
+      metadata:
+        name: dashboard
   - path: praxis-vertex-secret-mount.yaml
     target:
       group: apps
@@ -47,39 +60,6 @@ patches:
       kind: Service
       metadata:
         name: llm-katan
-  - target:
-      group: route.openshift.io
-      version: v1
-      kind: Route
-      name: ai-gateway-chat-completions
-    patch: |-
-      $patch: delete
-      apiVersion: route.openshift.io/v1
-      kind: Route
-      metadata:
-        name: ai-gateway-chat-completions
-  - target:
-      group: route.openshift.io
-      version: v1
-      kind: Route
-      name: ai-gateway-responses
-    patch: |-
-      $patch: delete
-      apiVersion: route.openshift.io/v1
-      kind: Route
-      metadata:
-        name: ai-gateway-responses
-  - target:
-      group: route.openshift.io
-      version: v1
-      kind: Route
-      name: ai-gateway-conversations
-    patch: |-
-      $patch: delete
-      apiVersion: route.openshift.io/v1
-      kind: Route
-      metadata:
-        name: ai-gateway-conversations
   - target:
       group: apps
       version: v1
@@ -133,8 +113,49 @@ patches:
       kind: Deployment
       name: metering-service
     patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value:
           name: MONTHLY_TOKEN_QUOTA
           value: "10000000000"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: M2M_AUTH_REQUIRED
+          value: "true"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: M2M_SHARED_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: metering-internal-auth
+              key: token
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: READ_DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: metering-readonly-db-url
+              key: READ_DATABASE_URL
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: DASHBOARD_CACHE_ENABLED
+          value: "true"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: DASHBOARD_USE_ROLLUPS
+          # Keep rollup reads fail-safe until the pinned metering image clears
+          # maintenance errors and freshness state correctly.
+          value: "false"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: DASHBOARD_CACHE_TTL_SECONDS
+          value: "60"

@@ -11,6 +11,8 @@ PROFILE="${PROFILE:-dogfood}"
 STORAGE_CLASS="${STORAGE_CLASS:-ibmc-vpc-block-10iops-tier}"
 ROTATE_SECRETS="${ROTATE_SECRETS:-false}"
 UPDATE_CONFIG="${UPDATE_CONFIG:-false}"
+DATABASE_BACKEND="${DATABASE_BACKEND:-cnpg}"
+METERING_INTERNAL_AUTH_CHANGED=false
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROFILE_DIR="$SCRIPT_DIR/overlays/$PROFILE"
 
@@ -43,16 +45,101 @@ case "$PROFILE" in
 esac
 [[ "$NAMESPACE" == "$expected_namespace" ]] || \
   die "PROFILE=$PROFILE requires NAMESPACE=$expected_namespace"
+case "$DATABASE_BACKEND" in
+  cnpg|rds) ;;
+  *) die "DATABASE_BACKEND must be cnpg or rds" ;;
+esac
+if [[ "$DATABASE_BACKEND" == rds ]]; then
+  : "${RDS_EGRESS_CIDR:?Set RDS_EGRESS_CIDR to the approved RDS subnet or endpoint CIDR}"
+else
+  # The EnMaaS overlay still renders this field in CNPG mode; use a reserved,
+  # unroutable test CIDR so it cannot accidentally grant external access.
+  RDS_EGRESS_CIDR="${RDS_EGRESS_CIDR:-192.0.2.1/32}"
+fi
+validate_rds_cidr() {
+  RDS_EGRESS_CIDR="$RDS_EGRESS_CIDR" python3 - <<'PY'
+import ipaddress
+import os
+import sys
+
+value = os.environ["RDS_EGRESS_CIDR"]
+try:
+    network = ipaddress.ip_network(value, strict=False)
+except ValueError as exc:
+    print(f"ERROR: RDS_EGRESS_CIDR is not a valid CIDR: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+if network.prefixlen == 0:
+    print("ERROR: RDS_EGRESS_CIDR must not be a default route", file=sys.stderr)
+    raise SystemExit(1)
+PY
+}
+
+validate_rds_cidr
+
+validate_rds_url() {
+  local variable_name="$1"
+  local url_value="$2"
+  RDS_URL="$url_value" RDS_EXPECTED_HOST="$RDS_EXPECTED_HOST" \
+    RDS_URL_NAME="$variable_name" python3 - <<'PY'
+import os
+import sys
+from urllib.parse import parse_qs, urlsplit
+
+name = os.environ["RDS_URL_NAME"]
+value = os.environ["RDS_URL"]
+expected = os.environ["RDS_EXPECTED_HOST"].rstrip(".").lower()
+try:
+    parsed = urlsplit(value)
+    host = (parsed.hostname or "").rstrip(".").lower()
+    port = parsed.port
+except ValueError as exc:
+    print(f"ERROR: {name} is not a valid PostgreSQL URL: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+
+if parsed.scheme not in {"postgres", "postgresql"}:
+    print(f"ERROR: {name} must use the PostgreSQL URL scheme", file=sys.stderr)
+    raise SystemExit(1)
+if host != expected:
+    print(f"ERROR: {name} host does not match RDS_EXPECTED_HOST", file=sys.stderr)
+    raise SystemExit(1)
+if port not in {None, 5432}:
+    print(f"ERROR: {name} must use PostgreSQL port 5432", file=sys.stderr)
+    raise SystemExit(1)
+sslmode = parse_qs(parsed.query).get("sslmode", [""])[-1]
+if sslmode not in {"require", "verify-ca", "verify-full"}:
+    print(f"ERROR: {name} must require TLS with sslmode=require, verify-ca, or verify-full", file=sys.stderr)
+    raise SystemExit(1)
+PY
+}
+
+# Validate the external database target before any namespace or application
+# Secret is reconciled. This guard protects against sending an EnMaaS deploy to
+# an unintended database even when the OpenShift target itself is correct.
+if [[ "$DATABASE_BACKEND" == rds ]]; then
+  [[ "$PROFILE" == enmaas ]] || die "DATABASE_BACKEND=rds is only supported for PROFILE=enmaas"
+  : "${RDS_DATABASE_URL:?Set RDS_DATABASE_URL when DATABASE_BACKEND=rds}"
+  : "${RDS_READ_DATABASE_URL:?Set RDS_READ_DATABASE_URL when DATABASE_BACKEND=rds}"
+  : "${RDS_EXPECTED_HOST:?Set RDS_EXPECTED_HOST to the approved EnMaaS RDS hostname}"
+  [[ "$RDS_EXPECTED_HOST" != */* && "$RDS_EXPECTED_HOST" != *:* ]] || \
+    die "RDS_EXPECTED_HOST must be a hostname, not a URL or path"
+  validate_rds_url RDS_DATABASE_URL "$RDS_DATABASE_URL"
+  validate_rds_url RDS_READ_DATABASE_URL "$RDS_READ_DATABASE_URL"
+  validate_rds_url RDS_MAAS_DATABASE_URL "${RDS_MAAS_DATABASE_URL:-$RDS_DATABASE_URL}"
+  validate_rds_url RDS_METERING_DATABASE_URL "${RDS_METERING_DATABASE_URL:-$RDS_DATABASE_URL}"
+fi
 
 ROUTE_DOMAIN="$(oc get ingress.config.openshift.io cluster -o jsonpath='{.spec.domain}')"
 [[ -n "$ROUTE_DOMAIN" ]] || die "could not determine the OpenShift route domain"
 GATEWAY_HOST="${GATEWAY_HOST:-ai-gateway-${NAMESPACE}.${ROUTE_DOMAIN}}"
 GATEWAY_URL="${GATEWAY_URL:-https://${GATEWAY_HOST}}"
-export GATEWAY_HOST GATEWAY_URL
+DASHBOARD_HOST="${DASHBOARD_HOST:-dashboard-${NAMESPACE}.${ROUTE_DOMAIN}}"
+export GATEWAY_HOST GATEWAY_URL DASHBOARD_HOST
 
 if [[ "$PROFILE" == enmaas ]]; then
   : "${AWS_ROLE_ARN:?Set AWS_ROLE_ARN to the EnMaaS CNPG backup role ARN}"
 fi
+
+METERING_INTERNAL_AUTH_CHANGED=false
 
 [[ -n "${COS_BUCKET:-}" && -n "${COS_ENDPOINT:-}" && -n "${COS_REGION:-}" ]] || \
   die "COS_BUCKET, COS_ENDPOINT, and COS_REGION are required for the CNPG profile"
@@ -77,17 +164,27 @@ else
     --dry-run=client -o yaml | oc apply -f -
 fi
 
-# These derived connection secrets are safe to reconcile on every run.
+# These derived connection secrets are safe to reconcile on every run. In RDS
+# mode, complete URLs are supplied by the operations environment; credentials
+# never enter a tracked manifest. The CNPG password is still maintained so a
+# retained CNPG cluster remains a rollback target.
+if [[ "$DATABASE_BACKEND" == rds ]]; then
+  MAAS_DATABASE_URL="${RDS_MAAS_DATABASE_URL:-$RDS_DATABASE_URL}"
+  METERING_DATABASE_URL="${RDS_METERING_DATABASE_URL:-$RDS_DATABASE_URL}"
+else
+  MAAS_DATABASE_URL="postgresql://aigateway:${PG_PASSWORD}@aigateway-pg-rw:5432/aigateway?sslmode=disable"
+  METERING_DATABASE_URL="$MAAS_DATABASE_URL"
+fi
 oc -n "$NAMESPACE" create secret generic postgresql-credentials \
   --from-literal=POSTGRES_USER=aigateway \
   --from-literal=POSTGRES_PASSWORD="$PG_PASSWORD" \
   --from-literal=POSTGRES_DB=aigateway \
-  --from-literal=MAAS_DB_URL="postgresql://aigateway:${PG_PASSWORD}@aigateway-pg-rw:5432/aigateway?sslmode=disable" \
-  --from-literal=METERING_DB_URL="postgresql://aigateway:${PG_PASSWORD}@aigateway-pg-rw:5432/aigateway?sslmode=disable" \
+  --from-literal=MAAS_DB_URL="$MAAS_DATABASE_URL" \
+  --from-literal=METERING_DB_URL="$METERING_DATABASE_URL" \
   --dry-run=client -o yaml | oc apply -f -
 
 oc -n "$NAMESPACE" create secret generic maas-db-config \
-  --from-literal=DB_CONNECTION_URL="postgresql://aigateway:${PG_PASSWORD}@aigateway-pg-rw:5432/aigateway?sslmode=disable" \
+  --from-literal=DB_CONNECTION_URL="$MAAS_DATABASE_URL" \
   --dry-run=client -o yaml | oc apply -f -
 
 if ! secret_exists provider-credentials || [[ "$ROTATE_SECRETS" == true ]]; then
@@ -116,6 +213,19 @@ if [[ "$PROFILE" == enmaas ]]; then
     export VERTEX_IMAGE_TAG
   else
     : "${VERTEX_IMAGE_TAG:?Set VERTEX_IMAGE_TAG when BUILD_PRAXIS_IMAGE=false}"
+  fi
+  : "${METERING_SOURCE_SHA:?Set METERING_SOURCE_SHA to a pushed pricetag-metering commit}"
+  if [[ "${BUILD_METERING_IMAGE:-true}" == true ]]; then
+    METERING_IMAGE_TAG="$(NAMESPACE="$NAMESPACE" METERING_SOURCE_SHA="$METERING_SOURCE_SHA" \
+      METERING_SOURCE_REPO="${METERING_SOURCE_REPO:-https://github.com/redhat-et/pricetag-metering.git}" \
+      "$SCRIPT_DIR/build-metering-et.sh")"
+    export METERING_IMAGE_TAG
+    METERING_IMAGE_DIGEST="$(oc -n "$NAMESPACE" get istag "metering-service:${METERING_IMAGE_TAG}" \
+      -o jsonpath='{.image.dockerImageReference}' | sed 's/.*@//')"
+    export METERING_IMAGE_DIGEST
+  else
+    : "${METERING_IMAGE_TAG:?Set METERING_IMAGE_TAG when BUILD_METERING_IMAGE=false}"
+    : "${METERING_IMAGE_DIGEST:?Set METERING_IMAGE_DIGEST when BUILD_METERING_IMAGE=false}"
   fi
   if ! secret_exists vertex-sa-key || [[ "$ROTATE_SECRETS" == true || "${ROTATE_VERTEX_SA_KEY:-false}" == true ]]; then
     [[ -n "${VERTEX_SA_KEY_FILE:-}" && -f "$VERTEX_SA_KEY_FILE" ]] || \
@@ -157,6 +267,18 @@ if ! secret_exists pricetag-session || [[ "$ROTATE_SECRETS" == true ]]; then
     --dry-run=client -o yaml | oc apply -f -
 fi
 
+# The metering service's gateway-facing entitlement and event APIs use a
+# private bearer token. Preserve it across reruns; rotate only when explicitly
+# requested so a gateway rollout cannot invalidate active traffic unexpectedly.
+if [[ "$PROFILE" == enmaas ]] && \
+   (! secret_exists metering-internal-auth || [[ "${ROTATE_METERING_INTERNAL_AUTH:-false}" == true ]]); then
+  METERING_INTERNAL_TOKEN="${METERING_INTERNAL_TOKEN:-$(openssl rand -hex 32)}"
+  oc -n "$NAMESPACE" create secret generic metering-internal-auth \
+    --from-literal=token="$METERING_INTERNAL_TOKEN" \
+    --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
+  METERING_INTERNAL_AUTH_CHANGED=true
+fi
+
 # Cluster-scoped CRDs and the pinned CNPG operator are apply-safe. The operator
 # is installed once per cluster; the namespaced Cluster is safe to reconcile.
 for crd in "$SCRIPT_DIR"/crds/*.yaml; do
@@ -169,7 +291,7 @@ oc apply --server-side --force-conflicts \
   -f "$SCRIPT_DIR/database/cnpg/cnpg-operator-1.30.0.yaml"
 oc -n cnpg-system rollout status deploy/cnpg-controller-manager --timeout=300s
 
-export NAMESPACE STORAGE_CLASS COS_BUCKET COS_ENDPOINT COS_REGION
+export NAMESPACE STORAGE_CLASS COS_BUCKET COS_ENDPOINT COS_REGION RDS_EGRESS_CIDR
 CNPG_CLUSTER_MANIFEST="$SCRIPT_DIR/database/cnpg/10-cluster.yaml"
 CNPG_ENV_VARS="\${NAMESPACE} \${STORAGE_CLASS} \${COS_BUCKET} \${COS_ENDPOINT} \${COS_REGION}"
 if [[ "$PROFILE" == enmaas ]]; then
@@ -182,6 +304,40 @@ envsubst "\${NAMESPACE}" \
   < "$SCRIPT_DIR/database/cnpg/20-scheduled-backup.yaml" | oc apply -f -
 oc -n "$NAMESPACE" wait clusters.postgresql.cnpg.io/aigateway-pg \
   --for=condition=Ready --timeout=10m
+
+if [[ "$PROFILE" == enmaas ]]; then
+  if [[ "$DATABASE_BACKEND" == rds ]]; then
+    oc -n "$NAMESPACE" create secret generic metering-readonly-db-url \
+      --from-literal=READ_DATABASE_URL="$RDS_READ_DATABASE_URL" \
+      --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
+  else
+  if ! secret_exists metering-reader-password || [[ "${ROTATE_METERING_READER_PASSWORD:-false}" == true ]]; then
+    METERING_READER_PASSWORD="${METERING_READER_PASSWORD:-$(openssl rand -hex 32)}"
+    oc -n "$NAMESPACE" create secret generic metering-reader-password \
+      --from-literal=username=metering_reader \
+      --from-literal=password="$METERING_READER_PASSWORD" \
+      --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
+  fi
+  oc -n "$NAMESPACE" apply -f "$SCRIPT_DIR/database/readonly-replica/10-databaserole.yaml"
+  for _ in $(seq 1 60); do
+    if [[ "$(oc -n "$NAMESPACE" get databaserole metering-reader \
+      -o jsonpath='{.status.applied}' 2>/dev/null || true)" == true ]]; then
+      break
+    fi
+    sleep 2
+  done
+  [[ "$(oc -n "$NAMESPACE" get databaserole metering-reader \
+    -o jsonpath='{.status.applied}' 2>/dev/null || true)" == true ]] || \
+    die "metering-reader DatabaseRole did not become applied"
+  oc -n "$NAMESPACE" exec -i aigateway-pg-1 -- psql -U postgres -d aigateway \
+    -v ON_ERROR_STOP=1 -f - < "$SCRIPT_DIR/database/readonly-replica/20-grants.sql"
+  READER_PASSWORD="$(oc -n "$NAMESPACE" get secret metering-reader-password \
+    -o jsonpath='{.data.password}' | base64 --decode)"
+  oc -n "$NAMESPACE" create secret generic metering-readonly-db-url \
+    --from-literal=READ_DATABASE_URL="postgresql://metering_reader:${READER_PASSWORD}@aigateway-pg-r:5432/aigateway?sslmode=disable" \
+    --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
+  fi
+fi
 
 binding_name=""
 case "$PROFILE" in
@@ -206,8 +362,21 @@ if [[ "$PROFILE" == enmaas ]]; then
     > "$RENDER_DIR/with-vertex.yaml"
   mv "$RENDER_DIR/with-vertex.yaml" "$RENDER_DIR/manifests.yaml"
 fi
-envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${VERTEX_PROJECT} \${VERTEX_IMAGE_TAG}" \
+envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_TAG} \${METERING_IMAGE_DIGEST} \${RDS_EGRESS_CIDR}" \
   < "$RENDER_DIR/manifests.yaml" | oc apply -f -
+
+# The dashboard Route receives its host from OpenShift. Pass that canonical
+# host into the embedded welcome page so its Dashboard link never falls back
+# to the template placeholder. This is deliberately derived after apply: the
+# route host is not known when the static manifest is rendered.
+dashboard_host="$(oc -n "$NAMESPACE" get route dashboard-welcome -o jsonpath='{.spec.host}')"
+[[ -n "$dashboard_host" ]] || die "dashboard Route has no host"
+oc -n "$NAMESPACE" set env deployment/metering-service \
+  "WELCOME_DASHBOARD_URL=https://${dashboard_host}" >/dev/null
+
+if [[ "$PROFILE" == enmaas && "$METERING_INTERNAL_AUTH_CHANGED" == true ]]; then
+  oc -n "$NAMESPACE" rollout restart deployment/metering-service deployment/praxis
+fi
 
 oc -n "$NAMESPACE" rollout status deployment/maas-api --timeout=180s
 oc -n "$NAMESPACE" rollout status deployment/metering-service --timeout=180s
@@ -216,8 +385,9 @@ oc -n "$NAMESPACE" rollout status deployment/praxis --timeout=180s
 # Wait for every path route to be admitted before retiring old gateway hosts.
 # Route status keeps conditions under status.ingress, so oc wait's generic
 # condition handler is not reliable here.
-for route in ai-gateway ai-gateway-chat-completions ai-gateway-responses \
-  ai-gateway-conversations ai-gateway-models; do
+required_routes=(ai-gateway ai-gateway-chat-completions ai-gateway-responses \
+  ai-gateway-conversations ai-gateway-models)
+for route in "${required_routes[@]}"; do
   admitted=false
   for _ in {1..120}; do
     if [[ "$(oc -n "$NAMESPACE" get route "$route" \

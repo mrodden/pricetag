@@ -20,6 +20,7 @@ def main() -> int:
         "UPSTREAM_CLUSTER": "vertex-cluster.yaml",
         "ONLY_ACCESS": "vertex-only-access.yaml",
         "ONLY_MODEL_CATALOG": "vertex-only-model-catalog.yaml",
+        "METERING_INTERNAL_AUTH": "metering-internal-auth.yaml",
     }
 
     for marker, filename in fragments.items():

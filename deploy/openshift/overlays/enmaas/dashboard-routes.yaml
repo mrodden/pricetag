@@ -1,0 +1,218 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-welcome
+  labels:
+    app: metering-service
+  annotations:
+    haproxy.router.openshift.io/timeout: 60s
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /welcome
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-login
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /login
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-logout
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /logout
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-health
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /health
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-ready
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /ready
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-page
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /dashboard
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-manager
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /manager
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-admin
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /admin
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-routing
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /routing
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-me
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /me
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-invite
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /invite
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-whoami
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /whoami
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-api-whoami
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /api/v1/whoami
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-api-pricing
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /api/v1/pricing
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-api-dashboard
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /api/v1/dashboard
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-api-org
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /api/v1/org
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-api-me
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /api/v1/me
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-api-admin
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /api/v1/admin
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }

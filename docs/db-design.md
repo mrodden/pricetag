@@ -30,6 +30,59 @@ recovery objectives: **RPO ≈ seconds** (continuous WAL archiving), RTO ≈
 a restore-job spin-up, and any point-in-time since the oldest base
 backup restorable.
 
+## EnMaaS RDS backend — 2026-09-29
+
+The isolated EnMaaS environment now uses AWS RDS PostgreSQL as its application
+database. CNPG remains deployed and available as rollback insurance; it is no
+longer referenced by the MaaS API or metering-service connection Secrets.
+
+| Property | EnMaaS value |
+|---|---|
+| RDS identifier | `enmaas-db` |
+| Engine | PostgreSQL 16.15 |
+| Instance class | `db.m7g.xlarge` |
+| Availability | Multi-AZ |
+| Storage | 500 GiB gp3, autoscaling to 1 TiB |
+| Encryption | enabled |
+| Backup retention | 7 days (review before broader adoption) |
+| Application database | `aigateway` |
+| Application roles | `aigateway`, `metering_reader` |
+
+The target was initialized from a final frozen CNPG snapshot and validated
+through the live MaaS API, metering service, and Praxis gateway. The copied
+dataset contained 118,825 usage events, 336 API keys, 268 pricing rows, and
+1,854 hourly rollup rows. The obsolete
+`usage_events_backfill_bak_20260917` artifact was intentionally excluded.
+
+The RDS administration Secret is `enmaas-db` (`db.host`, `db.port`, `db.name`,
+`db.user`, `db.password`). Applications do not use that admin credential
+directly. They receive derived URLs through `maas-db-config/DB_CONNECTION_URL`,
+`postgresql-credentials/METERING_DB_URL`, and
+`metering-readonly-db-url/READ_DATABASE_URL`.
+
+The deployment supports `DATABASE_BACKEND=rds` with explicit primary/read
+URLs. Before broader use, restrict RDS security groups/public accessibility,
+verify backup/restore, and complete the `usage_events.event_id` idempotency
+migration. The migrated data has no duplicate event IDs, but no unique
+event-ID constraint is installed yet.
+
+### EnMaaS capacity baseline — 2026-09-29
+
+These are bounded smoke measurements, not a capacity guarantee:
+
+- 250 concurrent read-only entitlement checks completed successfully in about
+  one second without adding usage-event rows.
+- During the read-only burst, RDS CPU averaged about 2%, peaked below 3%,
+  connections peaked at 16, and Performance Insights DB load peaked at 1.
+- The metering service runs two replicas; both remained ready with no rollup or
+  parity errors.
+- A post-load GLM inference still returned HTTP 200 and wrote a normal event
+  to RDS.
+
+The next scale test should use sustained traffic and measure entitlement p95/p99,
+metering pool wait time, RDS connections, and event-ingestion latency. User
+count alone is not a capacity limit; active request rate and token volume are.
+
 ## Current architecture (post-cutover)
 
 ```mermaid
