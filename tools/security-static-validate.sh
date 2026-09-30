@@ -161,6 +161,7 @@ grep -q 'PROTECTED_OC_SERVER' deploy/openshift/deploy.sh || fail "deployment lac
 grep -q 'RDS_EXPECTED_HOST' deploy/openshift/deploy.sh || fail "deployment lacks RDS host guard"
 grep -q 'RDS_EGRESS_CIDR' deploy/openshift/deploy.sh || fail "deployment lacks RDS egress configuration"
 grep -q 'CONFIRM_DEPLOYMENT' deploy/openshift/deploy.sh || fail "deployment lacks explicit confirmation guard"
+grep -q 'pricetag.io/praxis-config-checksum' deploy/openshift/deploy.sh || fail "deployment lacks Praxis config-checksum rollout trigger"
 
 echo
 if ((${#failures[@]} > 0)); then

@@ -44,6 +44,7 @@ grep -q 'PRICETAG_KUBECONFIG' deploy/openshift/deploy.sh
 grep -q 'EXPECTED_OC_SERVER' deploy/openshift/deploy.sh
 grep -q 'PROTECTED_OC_SERVER' deploy/openshift/deploy.sh
 grep -q 'CONFIRM_DEPLOYMENT' deploy/openshift/deploy.sh
+grep -q 'pricetag.io/praxis-config-checksum' deploy/openshift/deploy.sh
 
 echo "== Kustomize profiles =="
 for profile in test dogfood enmaas; do

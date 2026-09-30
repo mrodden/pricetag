@@ -160,6 +160,9 @@ oc get storageclass "$STORAGE_CLASS" >/dev/null 2>&1 || \
 
 secret_exists() { oc -n "$NAMESPACE" get secret "$1" >/dev/null 2>&1; }
 config_exists() { oc -n "$NAMESPACE" get configmap "$1" >/dev/null 2>&1; }
+sha256_hex() {
+  if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi | awk '{print $1}'
+}
 
 oc apply -f "$PROFILE_DIR/namespace.yaml"
 
@@ -413,6 +416,20 @@ dashboard_host="$(oc -n "$NAMESPACE" get route dashboard-welcome -o jsonpath='{.
 [[ -n "$dashboard_host" ]] || die "dashboard Route has no host"
 oc -n "$NAMESPACE" set env deployment/metering-service \
   "WELCOME_DASHBOARD_URL=https://${dashboard_host}" >/dev/null
+
+# Praxis reads praxis-config once at startup, so applying a changed ConfigMap
+# alone leaves running pods on the previous pipelines (for example without the
+# metering internal-auth header). Pin the checksum of the applied config on the
+# pod template: a changed config rolls Praxis through its normal RollingUpdate,
+# an unchanged config is a no-op patch and does not restart anything.
+if [[ "$PROFILE" == enmaas ]]; then
+  praxis_config_checksum="$(oc -n "$NAMESPACE" get configmap praxis-config \
+    -o jsonpath='{.data.praxis\.yaml}' | sha256_hex)"
+  [[ "$praxis_config_checksum" =~ ^[0-9a-f]{64}$ ]] || die "could not compute praxis-config checksum"
+  oc -n "$NAMESPACE" patch deployment/praxis --type=merge -p \
+    "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"pricetag.io/praxis-config-checksum\":\"sha256:${praxis_config_checksum}\"}}}}}" \
+    >/dev/null
+fi
 
 if [[ "$PROFILE" == enmaas && "$METERING_INTERNAL_AUTH_CHANGED" == true ]]; then
   oc -n "$NAMESPACE" rollout restart deployment/metering-service deployment/praxis

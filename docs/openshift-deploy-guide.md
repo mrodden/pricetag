@@ -743,8 +743,11 @@ spec:
   selector: { app: praxis }
 ```
 
-> **Config reload**: the praxis pod reads the CM at start. After editing `praxis-config`,
-> run `oc rollout restart deploy/praxis -n "$NS"`.
+> **Config reload**: the praxis pod reads the CM at start. After editing `praxis-config`
+> by hand, run `oc rollout restart deploy/praxis -n "$NS"`. On the `enmaas` profile,
+> `deploy.sh` pins a `pricetag.io/praxis-config-checksum` annotation on the Praxis pod
+> template from the applied ConfigMap, so a deploy that changes the config rolls Praxis
+> automatically (RollingUpdate) and an unchanged config restarts nothing.
 
 ### 4.8 metering-service (PriceTag) + RBAC + route
 
