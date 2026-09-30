@@ -102,7 +102,7 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
   dashboard_paths="$(yq -r -N 'select(.kind == "Route" and .spec.host == "'"$DASHBOARD_HOST"'") | .spec.path' "$TMP_DIR/enmaas-rendered.yaml")"
   while IFS= read -r path; do
     case "$path" in
-      /welcome|/login|/logout|/health|/ready|/dashboard|/manager|/admin|/routing|/me|/invite|/whoami|/api/v1/whoami|/api/v1/pricing|/api/v1/dashboard|/api/v1/org|/api/v1/me|/api/v1/admin|/api/v1/usage|/api/v1/model-policies)
+      /welcome|/login|/logout|/health|/ready|/dashboard|/manager|/admin|/routing|/me|/invite|/whoami|/api/v1/whoami|/api/v1/pricing|/api/v1/dashboard|/api/v1/org|/api/v1/me|/api/v1/admin|/api/v1/usage|/api/v1/model-policies|/api/v1/users)
         ;;
       *)
         fail "dashboard Route path is not an approved UI path: ${path:-<catch-all>}"
@@ -116,6 +116,11 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
       fail "metering-service $secret_env must come from metering-partner-api Secret"
     fi
   done
+
+  if ! yq -e 'select(.kind == "Deployment" and .metadata.name == "metering-service") | .spec.template.spec.containers[0].env[] | select(.name == "USER_MANAGEMENT_API_SECRET" and .valueFrom.secretKeyRef.name == "metering-user-management-api" and .valueFrom.secretKeyRef.key == "token")' \
+    "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+    fail "metering-service USER_MANAGEMENT_API_SECRET must come from metering-user-management-api Secret"
+  fi
 
   if grep -Eq -- '--from-literal=(usage-report|model-policy)=' deploy/openshift/deploy.sh; then
     fail "partner bearer tokens must not be passed in process arguments"

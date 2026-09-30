@@ -16,6 +16,7 @@ METERING_MODEL_POLICY_CHECK="${METERING_MODEL_POLICY_CHECK:-false}"
 export METERING_MODEL_POLICY_CHECK
 METERING_INTERNAL_AUTH_CHANGED=false
 METERING_PARTNER_API_CHANGED=false
+METERING_USER_MANAGEMENT_API_CHANGED=false
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROFILE_DIR="$SCRIPT_DIR/overlays/$PROFILE"
 
@@ -322,6 +323,25 @@ if [[ "$PROFILE" == enmaas ]] && \
   METERING_PARTNER_API_CHANGED=true
 fi
 
+# User directory and key issuance have a dedicated credential: this secret can
+# mutate user tags and mint/revoke MaaS keys, so it is not shared with report or
+# model-policy consumers. Preserve it on reruns and rotate only deliberately.
+if [[ "$PROFILE" == enmaas ]] && \
+   (! secret_exists metering-user-management-api || [[ "${ROTATE_METERING_USER_MANAGEMENT_API_SECRET:-false}" == true ]]); then
+  (
+    umask 077
+    secret_dir="$(mktemp -d)"
+    trap 'rm -rf "$secret_dir"' EXIT
+    user_management_secret="${USER_MANAGEMENT_API_SECRET:-$(openssl rand -hex 32)}"
+    printf '%s' "$user_management_secret" >"$secret_dir/token"
+    unset user_management_secret USER_MANAGEMENT_API_SECRET
+    oc -n "$NAMESPACE" create secret generic metering-user-management-api \
+      --from-file=token="$secret_dir/token" \
+      --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
+  )
+  METERING_USER_MANAGEMENT_API_CHANGED=true
+fi
+
 # Cluster-scoped CRDs and the pinned CNPG operator are apply-safe. The operator
 # is installed once per cluster; the namespaced Cluster is safe to reconcile.
 for crd in "$SCRIPT_DIR"/crds/*.yaml; do
@@ -435,6 +455,9 @@ if [[ "$PROFILE" == enmaas && "$METERING_INTERNAL_AUTH_CHANGED" == true ]]; then
   oc -n "$NAMESPACE" rollout restart deployment/metering-service deployment/praxis
 fi
 if [[ "$PROFILE" == enmaas && "$METERING_PARTNER_API_CHANGED" == true ]]; then
+  oc -n "$NAMESPACE" rollout restart deployment/metering-service
+fi
+if [[ "$PROFILE" == enmaas && "$METERING_USER_MANAGEMENT_API_CHANGED" == true ]]; then
   oc -n "$NAMESPACE" rollout restart deployment/metering-service
 fi
 

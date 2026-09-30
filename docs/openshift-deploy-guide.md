@@ -363,21 +363,28 @@ oc create secret generic cnpg-backup-cos -n "$NS" \
 
 #### EnMaaS partner APIs
 
-The EnMaaS dashboard host exposes two path-scoped HTTPS APIs for external
+The EnMaaS dashboard host exposes three path-scoped HTTPS APIs for external
 service integrations:
 
 | API | Methods and path | Credential |
 |-----|------------------|------------|
-| User usage report | `GET /api/v1/usage/users/{username}` | `USAGE_REPORT_API_SECRET` |
-| User model allowlist | `GET`, `PUT`, `DELETE /api/v1/model-policies/users/{username}/allowlist` | `MODEL_POLICY_API_SECRET` |
+| User directory and MaaS keys | `GET`, `POST /api/v1/users`; `GET`, `PUT`, `DELETE /api/v1/users/{user_id}`; `POST /api/v1/users/{user_id}/keys`; `POST /api/v1/users/{user_id}/reactivate` | `USER_MANAGEMENT_API_SECRET` |
+| Batch user usage report | `POST /api/v1/usage/reports` | `USAGE_REPORT_API_SECRET` |
+| User model allowlist | `GET`, `PUT`, `DELETE /api/v1/model-policies/users/{user_id}/allowlist` | `MODEL_POLICY_API_SECRET` |
 
-The EnMaaS deploy script creates independent 256-bit bearer tokens in the
-`metering-partner-api` Secret on first deployment using protected temporary
-files, and preserves them on normal reruns. Give each token only to its
-intended service through the approved secret-distribution channel. Never put either token in browser code, URLs,
-configuration maps, or source control. To rotate them, set
-`ROTATE_METERING_PARTNER_API_SECRETS=true`, deploy, and update both consumers
-through that channel; rotation invalidates the old tokens.
+The EnMaaS deploy script creates 256-bit bearer tokens using protected
+temporary files and preserves them on normal reruns. The usage and model-policy
+credentials are stored in `metering-partner-api`; user CRUD and key issuance
+use the separate `metering-user-management-api` Secret. Give each token only to
+its intended backend through the approved secret-distribution channel. Never
+put tokens in browser code, URLs, configuration maps, or source control. Rotate
+the first pair with `ROTATE_METERING_PARTNER_API_SECRETS=true`, and rotate the
+user-management credential with
+`ROTATE_METERING_USER_MANAGEMENT_API_SECRET=true`; update the corresponding
+consumer after rotation.
+
+The user identity, request/response, and behavior contract is documented in
+the Metering [`partner-user-directory-api.md`](https://github.com/redhat-et/pricetag-metering/blob/main/docs/partner-user-directory-api.md).
 
 `METERING_MODEL_POLICY_CHECK` defaults to `false`; while disabled, the rendered
 Praxis config omits the option so older images continue to load. Enable it only

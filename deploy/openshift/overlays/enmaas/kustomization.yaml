@@ -153,6 +153,14 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value:
+          name: USER_MANAGEMENT_API_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: metering-user-management-api
+              key: token
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
           name: READ_DATABASE_URL
           valueFrom:
             secretKeyRef:

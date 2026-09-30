@@ -47,6 +47,11 @@ spec:
                 secretKeyRef:
                   name: metering-partner-api
                   key: model-policy
+            - name: USER_MANAGEMENT_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: metering-user-management-api
+                  key: token
           resources:
             requests:
               cpu: 50m
