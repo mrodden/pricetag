@@ -2,6 +2,7 @@
 """Inject EnMaaS-only Vertex fragments into the rendered Praxis ConfigMap."""
 
 from pathlib import Path
+import os
 import re
 import sys
 
@@ -34,6 +35,20 @@ def main() -> int:
         rendered, replacements = pattern.subn(replace, rendered)
         if replacements != 1:
             raise ValueError(f"expected one insertion marker for {marker}, found {replacements}")
+
+    model_policy_check = os.environ.get("METERING_MODEL_POLICY_CHECK", "false")
+    if model_policy_check not in {"true", "false"}:
+        raise ValueError("METERING_MODEL_POLICY_CHECK must be true or false")
+    policy_pattern = re.compile(r"(?m)^(?P<indent>[ \t]*)# ENMAAS_METERING_MODEL_POLICY\s*$")
+
+    def replace_model_policy(match: re.Match[str]) -> str:
+        if model_policy_check == "true":
+            return f'{match.group("indent")}model_policy_check: true'
+        return ""
+
+    rendered, policy_replacements = policy_pattern.subn(replace_model_policy, rendered)
+    if policy_replacements != 3:
+        raise ValueError(f"expected three metering model-policy markers, found {policy_replacements}")
 
     sys.stdout.write(rendered)
     return 0

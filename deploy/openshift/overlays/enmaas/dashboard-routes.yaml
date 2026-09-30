@@ -216,3 +216,33 @@ spec:
   to: { kind: Service, name: metering-service }
   port: { targetPort: 8080 }
   tls: { termination: edge }
+---
+# Partner API paths are path-scoped to avoid exposing the metering service's
+# entire listener. The handlers require their endpoint-specific bearer tokens.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-api-usage
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /api/v1/usage
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-api-model-policies
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /api/v1/model-policies
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

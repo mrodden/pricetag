@@ -83,6 +83,7 @@ data:
             source: "praxis-ai"
             fail_open: true
             identity_header_prefix: "x-tenant-"
+            # ENMAAS_METERING_MODEL_POLICY
             default_model: "unknown"
 
           - filter: stream_usage_inject
@@ -172,6 +173,7 @@ data:
             source: "praxis-ai-benchmark"
             fail_open: true
             identity_header_prefix: "x-tenant-"
+            # ENMAAS_METERING_MODEL_POLICY
             default_model: "unknown"
 
           - filter: token_count
@@ -342,6 +344,7 @@ data:
             source: "praxis-ai"
             fail_open: true
             identity_header_prefix: "x-tenant-"
+            # ENMAAS_METERING_MODEL_POLICY
             default_model: "unknown"
 
           # Anthropic (Messages SSE) and Qwen-via-Codex (Responses SSE) report

@@ -361,6 +361,33 @@ oc create secret generic cnpg-backup-cos -n "$NS" \
 > Create two databases (e.g. `maas` and `metering`) if you want app-level separation —
 > the live environment shares one. Update both DSNs accordingly.
 
+#### EnMaaS partner APIs
+
+The EnMaaS dashboard host exposes two path-scoped HTTPS APIs for external
+service integrations:
+
+| API | Methods and path | Credential |
+|-----|------------------|------------|
+| User usage report | `GET /api/v1/usage/users/{username}` | `USAGE_REPORT_API_SECRET` |
+| User model allowlist | `GET`, `PUT`, `DELETE /api/v1/model-policies/users/{username}/allowlist` | `MODEL_POLICY_API_SECRET` |
+
+The EnMaaS deploy script creates independent 256-bit bearer tokens in the
+`metering-partner-api` Secret on first deployment using protected temporary
+files, and preserves them on normal reruns. Give each token only to its
+intended service through the approved secret-distribution channel. Never put either token in browser code, URLs,
+configuration maps, or source control. To rotate them, set
+`ROTATE_METERING_PARTNER_API_SECRETS=true`, deploy, and update both consumers
+through that channel; rotation invalidates the old tokens.
+
+`METERING_MODEL_POLICY_CHECK` defaults to `false`; while disabled, the rendered
+Praxis config omits the option so older images continue to load. Enable it only
+when the Metering model-policy API and matching Praxis model-preflight image are
+deployed together. The deploy script builds Praxis from the supplied pushed
+`PRAXIS_SOURCE_SHA` and pins the resulting digest. When enabled, Praxis buffers
+the request body up to 32 MiB so the public model ID is checked before
+inference is forwarded. Keep partner APIs behind these authenticated routes; do
+not expose a catch-all route to the Metering service.
+
 ### 4.3 CloudNativePG PostgreSQL
 
 The supported deployment uses the pinned CloudNativePG operator and a three-

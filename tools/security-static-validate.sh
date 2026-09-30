@@ -11,6 +11,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 export NAMESPACE=enmaas
 export VERTEX_PROJECT=ci-placeholder-project
 export VERTEX_IMAGE_TAG=practice-ci
+export VERTEX_IMAGE_DIGEST=sha256:1111111111111111111111111111111111111111111111111111111111111111
 export METERING_IMAGE_DIGEST=sha256:0000000000000000000000000000000000000000000000000000000000000000
 export GATEWAY_HOST=ai-gateway-enmaas.apps.ci.example.com
 export GATEWAY_URL=https://$GATEWAY_HOST
@@ -18,6 +19,7 @@ export DASHBOARD_HOST=dashboard-enmaas.apps.ci.example.com
 export QWEN_ENDPOINT=qwen.ci.example.com
 export CB_GLM_ENDPOINT=glm.ci.example.com
 export RDS_EGRESS_CIDR=192.0.2.1/32
+export METERING_MODEL_POLICY_CHECK=true
 
 cd "$ROOT_DIR"
 failures=()
@@ -44,7 +46,7 @@ else
       >"$TMP_DIR/enmaas-vertex.yaml"; then
     fail "EnMaaS Vertex fragment rendering failed"
   else
-envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_TAG} ${METERING_IMAGE_DIGEST} ${RDS_EGRESS_CIDR}' \
+envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_DIGEST} ${METERING_IMAGE_DIGEST} ${RDS_EGRESS_CIDR}' \
       <"$TMP_DIR/enmaas-vertex.yaml" >"$TMP_DIR/enmaas-rendered.yaml"
     yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' \
       "$TMP_DIR/enmaas-rendered.yaml" >"$TMP_DIR/praxis.yaml" || fail "Praxis ConfigMap data is missing"
@@ -97,13 +99,31 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
   dashboard_paths="$(yq -r -N 'select(.kind == "Route" and .spec.host == "'"$DASHBOARD_HOST"'") | .spec.path' "$TMP_DIR/enmaas-rendered.yaml")"
   while IFS= read -r path; do
     case "$path" in
-      /welcome|/login|/logout|/health|/ready|/dashboard|/manager|/admin|/routing|/me|/invite|/whoami|/api/v1/whoami|/api/v1/pricing|/api/v1/dashboard|/api/v1/org|/api/v1/me|/api/v1/admin)
+      /welcome|/login|/logout|/health|/ready|/dashboard|/manager|/admin|/routing|/me|/invite|/whoami|/api/v1/whoami|/api/v1/pricing|/api/v1/dashboard|/api/v1/org|/api/v1/me|/api/v1/admin|/api/v1/usage|/api/v1/model-policies)
         ;;
       *)
         fail "dashboard Route path is not an approved UI path: ${path:-<catch-all>}"
         ;;
     esac
   done <<<"$dashboard_paths"
+
+  for secret_env in USAGE_REPORT_API_SECRET MODEL_POLICY_API_SECRET; do
+    if ! yq -e "select(.kind == \"Deployment\" and .metadata.name == \"metering-service\") | .spec.template.spec.containers[0].env[] | select(.name == \"$secret_env\" and .valueFrom.secretKeyRef.name == \"metering-partner-api\")" \
+      "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+      fail "metering-service $secret_env must come from metering-partner-api Secret"
+    fi
+  done
+
+  if grep -Eq -- '--from-literal=(usage-report|model-policy)=' deploy/openshift/deploy.sh; then
+    fail "partner bearer tokens must not be passed in process arguments"
+  fi
+
+  for route in dashboard-api-usage dashboard-api-model-policies; do
+    if ! yq -e "select(.kind == \"Route\" and .metadata.name == \"$route\") | select(.spec.tls.termination == \"edge\" and .spec.tls.insecureEdgeTerminationPolicy == \"Redirect\")" \
+      "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+      fail "$route must use edge TLS and redirect insecure HTTP"
+    fi
+  done
 
   for policy in enmaas-allow-maas-api-rds-egress enmaas-allow-metering-rds-egress; do
     if ! yq -e "select(.kind == \"NetworkPolicy\" and .metadata.name == \"$policy\") | .spec.egress[] | select(.to[]?.ipBlock.cidr == \"$RDS_EGRESS_CIDR\") | .ports[] | select(.protocol == \"TCP\" and .port == 5432)" \
