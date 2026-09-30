@@ -33,8 +33,9 @@ def main() -> int:
             return "\n".join(f"{indent}{line}" if line else indent for line in snippet)
 
         rendered, replacements = pattern.subn(replace, rendered)
-        if replacements != 1:
-            raise ValueError(f"expected one insertion marker for {marker}, found {replacements}")
+        expected = 3 if marker == "METERING_INTERNAL_AUTH" else 1
+        if replacements != expected:
+            raise ValueError(f"expected {expected} insertion markers for {marker}, found {replacements}")
 
     model_policy_check = os.environ.get("METERING_MODEL_POLICY_CHECK", "false")
     if model_policy_check not in {"true", "false"}:

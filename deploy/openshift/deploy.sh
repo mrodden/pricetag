@@ -136,10 +136,16 @@ fi
 
 ROUTE_DOMAIN="$(oc get ingress.config.openshift.io cluster -o jsonpath='{.spec.domain}')"
 [[ -n "$ROUTE_DOMAIN" ]] || die "could not determine the OpenShift route domain"
+KUBE_DNS_SERVICE_IP="$(oc -n openshift-dns get service dns-default -o jsonpath='{.spec.clusterIP}')"
+KUBE_API_SERVICE_IP="$(oc -n default get service kubernetes -o jsonpath='{.spec.clusterIP}')"
+KUBE_API_ENDPOINT_IP="$(oc -n default get endpoints kubernetes -o jsonpath='{.subsets[0].addresses[0].ip}')"
+for value in KUBE_DNS_SERVICE_IP KUBE_API_SERVICE_IP KUBE_API_ENDPOINT_IP; do
+  [[ "${!value}" =~ ^[0-9]+(\.[0-9]+){3}$ ]] || die "$value is not a valid IPv4 address"
+done
 GATEWAY_HOST="${GATEWAY_HOST:-ai-gateway-${NAMESPACE}.${ROUTE_DOMAIN}}"
 GATEWAY_URL="${GATEWAY_URL:-https://${GATEWAY_HOST}}"
 DASHBOARD_HOST="${DASHBOARD_HOST:-dashboard-${NAMESPACE}.${ROUTE_DOMAIN}}"
-export GATEWAY_HOST GATEWAY_URL DASHBOARD_HOST
+export GATEWAY_HOST GATEWAY_URL DASHBOARD_HOST KUBE_DNS_SERVICE_IP KUBE_API_SERVICE_IP KUBE_API_ENDPOINT_IP
 
 if [[ "$PROFILE" == enmaas ]]; then
   : "${AWS_ROLE_ARN:?Set AWS_ROLE_ARN to the EnMaaS CNPG backup role ARN}"
@@ -154,6 +160,9 @@ oc get storageclass "$STORAGE_CLASS" >/dev/null 2>&1 || \
 
 secret_exists() { oc -n "$NAMESPACE" get secret "$1" >/dev/null 2>&1; }
 config_exists() { oc -n "$NAMESPACE" get configmap "$1" >/dev/null 2>&1; }
+sha256_hex() {
+  if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi | awk '{print $1}'
+}
 
 oc apply -f "$PROFILE_DIR/namespace.yaml"
 
@@ -396,7 +405,7 @@ if [[ "$PROFILE" == enmaas ]]; then
     > "$RENDER_DIR/with-vertex.yaml"
   mv "$RENDER_DIR/with-vertex.yaml" "$RENDER_DIR/manifests.yaml"
 fi
-envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_DIGEST} \${METERING_IMAGE_DIGEST} \${RDS_EGRESS_CIDR}" \
+envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_DIGEST} \${METERING_IMAGE_DIGEST} \${RDS_EGRESS_CIDR} \${KUBE_DNS_SERVICE_IP} \${KUBE_API_SERVICE_IP} \${KUBE_API_ENDPOINT_IP}" \
   < "$RENDER_DIR/manifests.yaml" | oc apply -f -
 
 # The dashboard Route receives its host from OpenShift. Pass that canonical
@@ -407,6 +416,20 @@ dashboard_host="$(oc -n "$NAMESPACE" get route dashboard-welcome -o jsonpath='{.
 [[ -n "$dashboard_host" ]] || die "dashboard Route has no host"
 oc -n "$NAMESPACE" set env deployment/metering-service \
   "WELCOME_DASHBOARD_URL=https://${dashboard_host}" >/dev/null
+
+# Praxis reads praxis-config once at startup, so applying a changed ConfigMap
+# alone leaves running pods on the previous pipelines (for example without the
+# metering internal-auth header). Pin the checksum of the applied config on the
+# pod template: a changed config rolls Praxis through its normal RollingUpdate,
+# an unchanged config is a no-op patch and does not restart anything.
+if [[ "$PROFILE" == enmaas ]]; then
+  praxis_config_checksum="$(oc -n "$NAMESPACE" get configmap praxis-config \
+    -o jsonpath='{.data.praxis\.yaml}' | sha256_hex)"
+  [[ "$praxis_config_checksum" =~ ^[0-9a-f]{64}$ ]] || die "could not compute praxis-config checksum"
+  oc -n "$NAMESPACE" patch deployment/praxis --type=merge -p \
+    "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"pricetag.io/praxis-config-checksum\":\"sha256:${praxis_config_checksum}\"}}}}}" \
+    >/dev/null
+fi
 
 if [[ "$PROFILE" == enmaas && "$METERING_INTERNAL_AUTH_CHANGED" == true ]]; then
   oc -n "$NAMESPACE" rollout restart deployment/metering-service deployment/praxis
