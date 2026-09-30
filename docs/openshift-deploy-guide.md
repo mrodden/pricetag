@@ -368,7 +368,7 @@ service integrations:
 
 | API | Methods and path | Credential |
 |-----|------------------|------------|
-| User directory and MaaS keys | `GET`, `POST /api/v1/users`; `GET`, `PUT`, `DELETE /api/v1/users/{user_id}`; `POST /api/v1/users/{user_id}/keys`; `POST /api/v1/users/{user_id}/reactivate` | `USER_MANAGEMENT_API_SECRET` |
+| User directory and MaaS keys | `GET`, `POST /api/v1/users`; `GET`, `PUT`, `DELETE /api/v1/users/{user_id}`; `GET`, `POST /api/v1/users/{user_id}/keys`; `DELETE /api/v1/users/{user_id}/keys/{key_id}`; `POST /api/v1/users/{user_id}/reactivate` | `USER_MANAGEMENT_API_SECRET` |
 | Batch user usage report | `POST /api/v1/usage/reports` | `USAGE_REPORT_API_SECRET` |
 | User model allowlist | `GET`, `PUT`, `DELETE /api/v1/model-policies/users/{user_id}/allowlist` | `MODEL_POLICY_API_SECRET` |
 
