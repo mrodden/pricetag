@@ -389,8 +389,9 @@ HAProxy connection rate limits; before the user-management credential is
 distributed, add `haproxy.router.openshift.io/ip_whitelist` with the Atlas and
 AIBH egress ranges to that Route.
 
-The user identity, request/response, and behavior contract is documented in
-the Metering [`partner-user-directory-api.md`](https://github.com/redhat-et/pricetag-metering/blob/feat/partner-user-directory-api/docs/partner-user-directory-api.md).
+The user identity, request/response, and behavior contract is maintained in
+the private Atlas integration handoff. It is intentionally not linked from
+this public deployment repository.
 
 `METERING_MODEL_POLICY_CHECK` defaults to `false`; while disabled, the rendered
 Praxis config omits the option so older images continue to load. Enable it only
