@@ -102,7 +102,7 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
   dashboard_paths="$(yq -r -N 'select(.kind == "Route" and .spec.host == "'"$DASHBOARD_HOST"'") | .spec.path' "$TMP_DIR/enmaas-rendered.yaml")"
   while IFS= read -r path; do
     case "$path" in
-      /welcome|/login|/logout|/health|/ready|/dashboard|/manager|/admin|/routing|/me|/invite|/whoami|/api/v1/whoami|/api/v1/pricing|/api/v1/dashboard|/api/v1/org|/api/v1/me|/api/v1/admin|/api/v1/usage|/api/v1/model-policies|/api/v1/users)
+      /welcome|/login|/logout|/health|/ready|/dashboard|/manager|/admin|/routing|/me|/invite|/whoami|/api/v1/whoami|/api/v1/pricing|/api/v1/dashboard|/api/v1/org|/api/v1/me|/api/v1/admin|/api/v1/usage|/api/v1/model-policies|/api/v1/users|/api/v1/models)
         ;;
       *)
         fail "dashboard Route path is not an approved UI path: ${path:-<catch-all>}"
@@ -122,7 +122,7 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
     fail "PARTNER_USER_KEY_GROUP must not be hardcoded in the overlay; it is a per-deployment decision"
   fi
 
-  for route in dashboard-api-usage dashboard-api-model-policies dashboard-api-users; do
+  for route in dashboard-api-usage dashboard-api-model-policies dashboard-api-users dashboard-api-models; do
     if ! yq -e "select(.kind == \"Route\" and .metadata.name == \"$route\") | select(.spec.tls.termination == \"edge\" and .spec.tls.insecureEdgeTerminationPolicy == \"Redirect\")" \
       "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
       fail "$route must use edge TLS and redirect insecure HTTP"

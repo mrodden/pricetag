@@ -371,6 +371,7 @@ service integrations:
 | User directory and MaaS keys | `GET`, `POST /api/v1/users`; `GET`, `PUT`, `DELETE /api/v1/users/{user_id}`; `GET`, `POST /api/v1/users/{user_id}/keys`; `DELETE /api/v1/users/{user_id}/keys/{key_id}`; `POST /api/v1/users/{user_id}/reactivate` | OpenShift Route/AuthPolicy |
 | Batch user usage report | `POST /api/v1/usage/reports` | OpenShift Route/AuthPolicy |
 | User model allowlist | `GET`, `PUT`, `DELETE /api/v1/model-policies/users/{user_id}/allowlist` | OpenShift Route/AuthPolicy |
+| Global model catalog | `GET /api/v1/models` | OpenShift Route/AuthPolicy; no MaaS key required |
 
 The Metering listener intentionally does not authenticate these partner paths.
 The OpenShift Route/AuthPolicy must authenticate the Atlas/AIR/AIBH caller and

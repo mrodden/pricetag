@@ -268,3 +268,17 @@ spec:
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-api-models
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /api/v1/models
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
