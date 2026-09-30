@@ -383,6 +383,16 @@ user-management credential with
 `ROTATE_METERING_USER_MANAGEMENT_API_SECRET=true`; update the corresponding
 consumer after rotation.
 
+Partner key operations (list, mint, revoke, deactivate) additionally need
+`PARTNER_USER_KEY_GROUP`, the MaaS group presented for every key call. It has
+no default: the group must already exist in MaaS with an accessible
+subscription, and the value is an operator decision tracked in PriceTag #31.
+Until it is set, those endpoints answer `503` while user CRUD, search, usage
+reports and model policies work normally. The `/api/v1/users` Route carries
+HAProxy connection rate limits; before the user-management credential is
+distributed, add `haproxy.router.openshift.io/ip_whitelist` with the Atlas and
+AIBH egress ranges to that Route.
+
 The user identity, request/response, and behavior contract is documented in
 the Metering [`partner-user-directory-api.md`](https://github.com/redhat-et/pricetag-metering/blob/feat/partner-user-directory-api/docs/partner-user-directory-api.md).
 

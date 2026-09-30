@@ -438,10 +438,9 @@ oc -n "$NAMESPACE" set env deployment/metering-service \
   "WELCOME_DASHBOARD_URL=https://${dashboard_host}" >/dev/null
 
 # Praxis reads praxis-config once at startup, so applying a changed ConfigMap
-# alone leaves running pods on the previous pipelines (for example without the
-# metering internal-auth header). Pin the checksum of the applied config on the
-# pod template: a changed config rolls Praxis through its normal RollingUpdate,
-# an unchanged config is a no-op patch and does not restart anything.
+# alone leaves running pods on the previous pipelines. Pin the checksum of the
+# applied config on the pod template: a changed config rolls Praxis through its
+# normal RollingUpdate, while an unchanged config does not restart anything.
 if [[ "$PROFILE" == enmaas ]]; then
   praxis_config_checksum="$(oc -n "$NAMESPACE" get configmap praxis-config \
     -o jsonpath='{.data.praxis\.yaml}' | sha256_hex)"
@@ -451,13 +450,26 @@ if [[ "$PROFILE" == enmaas ]]; then
     >/dev/null
 fi
 
+# The MaaS group presented on partner key operations. No default on purpose:
+# it must be an existing MaaS group with an accessible subscription. When the
+# operator omits it, actively remove any value left by an earlier deployment;
+# otherwise a rerun would silently keep key issuance enabled.
+if [[ "$PROFILE" == enmaas ]]; then
+  if [[ -n "${PARTNER_USER_KEY_GROUP:-}" ]]; then
+    [[ "$PARTNER_USER_KEY_GROUP" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$ ]] || die "PARTNER_USER_KEY_GROUP is not a valid group name"
+    oc -n "$NAMESPACE" set env deployment/metering-service "PARTNER_USER_KEY_GROUP=$PARTNER_USER_KEY_GROUP" >/dev/null
+  else
+    oc -n "$NAMESPACE" set env deployment/metering-service PARTNER_USER_KEY_GROUP- >/dev/null
+    echo "PARTNER_USER_KEY_GROUP not set: partner key endpoints stay disabled (503)" >&2
+  fi
+fi
+
+# One restart covers every credential created or rotated in this run.
 if [[ "$PROFILE" == enmaas && "$METERING_INTERNAL_AUTH_CHANGED" == true ]]; then
-  oc -n "$NAMESPACE" rollout restart deployment/metering-service deployment/praxis
+  oc -n "$NAMESPACE" rollout restart deployment/praxis
 fi
-if [[ "$PROFILE" == enmaas && "$METERING_PARTNER_API_CHANGED" == true ]]; then
-  oc -n "$NAMESPACE" rollout restart deployment/metering-service
-fi
-if [[ "$PROFILE" == enmaas && "$METERING_USER_MANAGEMENT_API_CHANGED" == true ]]; then
+if [[ "$PROFILE" == enmaas ]] && \
+   [[ "$METERING_INTERNAL_AUTH_CHANGED" == true || "$METERING_PARTNER_API_CHANGED" == true || "$METERING_USER_MANAGEMENT_API_CHANGED" == true ]]; then
   oc -n "$NAMESPACE" rollout restart deployment/metering-service
 fi
 

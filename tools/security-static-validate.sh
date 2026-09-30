@@ -126,7 +126,15 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
     fail "partner bearer tokens must not be passed in process arguments"
   fi
 
-  for route in dashboard-api-usage dashboard-api-model-policies; do
+  if ! yq -e 'select(.kind == "Route" and .metadata.name == "dashboard-api-users") | select(.metadata.annotations."haproxy.router.openshift.io/rate-limit-connections" == "true")' \
+    "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+    fail "dashboard-api-users (key-minting path) must carry HAProxy rate limiting"
+  fi
+  if grep -Eq 'PARTNER_USER_KEY_GROUP[^\n]*value:' deploy/openshift/overlays/enmaas/kustomization.yaml; then
+    fail "PARTNER_USER_KEY_GROUP must not be hardcoded in the overlay; it is a per-deployment decision"
+  fi
+
+  for route in dashboard-api-usage dashboard-api-model-policies dashboard-api-users; do
     if ! yq -e "select(.kind == \"Route\" and .metadata.name == \"$route\") | select(.spec.tls.termination == \"edge\" and .spec.tls.insecureEdgeTerminationPolicy == \"Redirect\")" \
       "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
       fail "$route must use edge TLS and redirect insecure HTTP"
