@@ -1,6 +1,10 @@
 # Controlled EnMaaS canary for validating a pushed Metering image. This file
 # is deliberately not a Kustomize resource: apply it explicitly for a test,
 # port-forward to its ClusterIP Service, then delete both objects afterwards.
+#
+# WARNING: the canary uses the same METERING_DB_URL as the live service, so
+# starting it runs the image's migrations against the production database.
+# Only run a canary for an image whose schema changes are meant to ship.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -37,16 +41,8 @@ spec:
                   fieldPath: metadata.namespace
             - name: MONTHLY_TOKEN_QUOTA
               value: "10000000000"
-            - name: USAGE_REPORT_API_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: metering-partner-api
-                  key: usage-report
-            - name: MODEL_POLICY_API_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: metering-partner-api
-                  key: model-policy
+            # PARTNER_USER_KEY_GROUP is intentionally absent: canary runs keep
+            # key operations at 503 unless set explicitly for a test.
           resources:
             requests:
               cpu: 50m

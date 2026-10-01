@@ -92,13 +92,15 @@ grep -qx 'dashboard-welcome' <<<"$routes"
 grep -qx 'dashboard-page' <<<"$routes"
 grep -qx 'dashboard-api-usage' <<<"$routes"
 grep -qx 'dashboard-api-model-policies' <<<"$routes"
+grep -qx 'dashboard-api-users' <<<"$routes"
+grep -qx 'dashboard-api-models' <<<"$routes"
 ! grep -qx 'dashboard' <<<"$routes"
 ! grep -q 'llm-katan' "$TMP_DIR/enmaas-rendered.yaml"
 
 dashboard_paths="$(yq -r -N 'select(.kind == "Route" and .spec.host == "'"$DASHBOARD_HOST"'") | .spec.path' "$TMP_DIR/enmaas-rendered.yaml")"
 while IFS= read -r path; do
   case "$path" in
-    /welcome|/login|/logout|/health|/ready|/dashboard|/manager|/admin|/routing|/me|/invite|/whoami|/api/v1/whoami|/api/v1/pricing|/api/v1/dashboard|/api/v1/org|/api/v1/me|/api/v1/admin|/api/v1/usage|/api/v1/model-policies)
+    /welcome|/login|/logout|/health|/ready|/dashboard|/manager|/admin|/routing|/me|/invite|/whoami|/api/v1/whoami|/api/v1/pricing|/api/v1/dashboard|/api/v1/org|/api/v1/me|/api/v1/admin|/api/v1/usage|/api/v1/model-policies|/api/v1/users|/api/v1/models)
       ;;
     *)
       echo "dashboard Route path is not an approved UI path: ${path:-<catch-all>}" >&2

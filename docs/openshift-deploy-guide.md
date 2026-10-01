@@ -363,21 +363,35 @@ oc create secret generic cnpg-backup-cos -n "$NS" \
 
 #### EnMaaS partner APIs
 
-The EnMaaS dashboard host exposes two path-scoped HTTPS APIs for external
+The EnMaaS dashboard host exposes three path-scoped HTTPS APIs for external
 service integrations:
 
-| API | Methods and path | Credential |
-|-----|------------------|------------|
-| User usage report | `GET /api/v1/usage/users/{username}` | `USAGE_REPORT_API_SECRET` |
-| User model allowlist | `GET`, `PUT`, `DELETE /api/v1/model-policies/users/{username}/allowlist` | `MODEL_POLICY_API_SECRET` |
+| API | Methods and path | Route authentication |
+|-----|------------------|---------------------|
+| User directory and MaaS keys | `GET`, `POST /api/v1/users`; `GET`, `PUT`, `DELETE /api/v1/users/{user_id}`; `GET`, `POST /api/v1/users/{user_id}/keys`; `DELETE /api/v1/users/{user_id}/keys/{key_id}`; `POST /api/v1/users/{user_id}/reactivate` | OpenShift Route/AuthPolicy |
+| Batch user usage report | `POST /api/v1/usage/reports` | OpenShift Route/AuthPolicy |
+| User model allowlist | `GET`, `PUT`, `DELETE /api/v1/model-policies/users/{user_id}/allowlist` | OpenShift Route/AuthPolicy |
+| Global model catalog | `GET /api/v1/models` | OpenShift Route/AuthPolicy; no MaaS key required |
 
-The EnMaaS deploy script creates independent 256-bit bearer tokens in the
-`metering-partner-api` Secret on first deployment using protected temporary
-files, and preserves them on normal reruns. Give each token only to its
-intended service through the approved secret-distribution channel. Never put either token in browser code, URLs,
-configuration maps, or source control. To rotate them, set
-`ROTATE_METERING_PARTNER_API_SECRETS=true`, deploy, and update both consumers
-through that channel; rotation invalidates the old tokens.
+The Metering listener intentionally does not authenticate these partner paths.
+The OpenShift Route/AuthPolicy must authenticate the Atlas/AIR/AIBH caller and
+must prevent direct Service or port-forward bypass. Do not distribute a
+Metering bearer token; the route owner is responsible for the workload
+identity/mTLS or equivalent AuthPolicy and any IP restrictions.
+
+Partner key operations (list, mint, revoke, deactivate) additionally need
+`PARTNER_USER_KEY_GROUP`, the MaaS group presented for every key call. It has
+no default: the group must already exist in MaaS with an accessible
+subscription, and the value is an operator decision. Until it is set, those
+endpoints answer `503` while user CRUD, search, usage reports and model
+policies work normally. The `/api/v1/users` Route carries
+HAProxy connection rate limits; before the user-management credential is
+distributed, add `haproxy.router.openshift.io/ip_whitelist` with the Atlas and
+AIBH egress ranges to that Route.
+
+The user identity, request/response, and behavior contract is maintained in
+the private Atlas integration handoff. It is intentionally not linked from
+this public deployment repository.
 
 `METERING_MODEL_POLICY_CHECK` defaults to `false`; while disabled, the rendered
 Praxis config omits the option so older images continue to load. Enable it only
