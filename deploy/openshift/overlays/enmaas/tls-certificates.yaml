@@ -1,0 +1,76 @@
+# Public TLS certificates for the EnMaaS hostnames.
+#
+# deploy.sh refuses to apply the Routes unless api-enmaas-tls and
+# dashboard-enmaas-tls already exist as kubernetes.io/tls Secrets. These
+# Certificate resources are what create and then continuously renew them -
+# the Secrets are issued by cert-manager, not hand-built, and must not be
+# edited or replaced by hand (the controller will overwrite the contents).
+#
+# Prerequisite (one-time per cluster): deploy/openshift/cert-manager/
+# installs the operator and the letsencrypt-prod ClusterIssuer. On a fresh
+# cluster, apply these Certificates and wait for readiness BEFORE running
+# deploy.sh, otherwise its TLS preflight fails by design:
+#
+#   oc apply -f deploy/openshift/cert-manager/00-operator.yaml
+#   oc -n cert-manager rollout status deploy/cert-manager --timeout=300s
+#   oc apply -f deploy/openshift/cert-manager/01-clusterissuer.yaml
+#   oc -n enmaas apply -f deploy/openshift/overlays/enmaas/tls-certificates.yaml
+#   oc -n enmaas wait --for=condition=Ready certificate --all --timeout=300s
+#
+# Renewal is automatic at 60 days (30 days before the 90-day expiry) and the
+# router picks up the rotated Secret without a restart, because the Routes
+# reference it through spec.tls.externalCertificate (see router-tls-rbac.yaml
+# for the read access that requires).
+#
+# NOTE: HTTP-01 validation requires the public DNS name to already resolve to
+# this cluster's router. The records live in app-interface
+# (data/aws/app-sre/dns/devshift.net.yaml, app-sre account), so DNS must be in
+# place before issuance will succeed.
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: api-enmaas-devshift-net
+  labels:
+    app: praxis
+spec:
+  secretName: api-enmaas-tls
+  commonName: ${GATEWAY_HOST}
+  dnsNames:
+    - ${GATEWAY_HOST}
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  duration: 2160h    # 90d
+  renewBefore: 720h  # renew at 60d
+  secretTemplate:
+    labels:
+      app: praxis
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: dashboard-enmaas-devshift-net
+  labels:
+    app: metering-service
+spec:
+  secretName: dashboard-enmaas-tls
+  commonName: ${DASHBOARD_HOST}
+  dnsNames:
+    - ${DASHBOARD_HOST}
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  duration: 2160h
+  renewBefore: 720h
+  secretTemplate:
+    labels:
+      app: metering-service
