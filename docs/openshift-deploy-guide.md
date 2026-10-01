@@ -413,26 +413,34 @@ oc create secret generic cnpg-backup-cos -n "$NS" \
 The EnMaaS dashboard host exposes three path-scoped HTTPS APIs for external
 service integrations:
 
-| API | Methods and path | Authentication expectation |
+| API | Methods and path | Authentication |
 |-----|------------------|---------------------|
-| User directory and MaaS keys | `GET`, `POST /api/v1/users`; `GET`, `PUT`, `DELETE /api/v1/users/{user_id}`; `GET`, `POST /api/v1/users/{user_id}/keys`; `DELETE /api/v1/users/{user_id}/keys/{key_id}`; `POST /api/v1/users/{user_id}/reactivate` | Edge authentication preferred; temporary exception requires explicit approval and private access |
-| Batch user usage report | `POST /api/v1/usage/reports` | Edge authentication preferred; temporary exception requires explicit approval and private access |
-| User model allowlist | `GET`, `PUT`, `DELETE /api/v1/model-policies/users/{user_id}/allowlist` | Edge authentication preferred; temporary exception requires explicit approval and private access |
-| Global model catalog | `GET /api/v1/models` | Edge authentication preferred; temporary exception requires explicit approval and private access; no MaaS key required |
+| User directory and MaaS keys | `GET`, `POST /api/v1/users`; `GET`, `PUT`, `DELETE /api/v1/users/{user_id}`; `GET`, `POST /api/v1/users/{user_id}/keys`; `DELETE /api/v1/users/{user_id}/keys/{key_id}`; `POST /api/v1/users/{user_id}/reactivate` | Endpoint-specific application bearer plus Route/AuthPolicy defense-in-depth |
+| Batch user usage report | `POST /api/v1/usage/reports` | Endpoint-specific application bearer plus Route/AuthPolicy defense-in-depth |
+| User model allowlist | `GET`, `PUT`, `DELETE /api/v1/model-policies/users/{user_id}/allowlist` | Endpoint-specific application bearer plus Route/AuthPolicy defense-in-depth |
+| Global model catalog | `GET /api/v1/models` | Endpoint-specific application bearer plus Route/AuthPolicy defense-in-depth; no MaaS key required |
 
-The Metering listener intentionally does not authenticate these partner paths.
-The preferred deployment uses an OpenShift Route/AuthPolicy, OIDC/JWT,
-mTLS, or an equivalent edge authorizer to authenticate the Atlas/AIR/AIBH
-caller and prevent direct Service or port-forward bypass. Do not distribute a
-Metering bearer token.
+The Metering listener requires an endpoint-specific application bearer on all
+partner paths. Missing configuration returns `503`; missing or invalid bearer
+credentials return `401`. The bearer is compared in constant time and is
+never logged. The OpenShift Route/AuthPolicy, OIDC/JWT, mTLS, or equivalent
+edge authorizer remains defense-in-depth and should authenticate the
+Atlas/AIR/AIBH workload. Direct Service and port-forward requests without the
+application bearer must fail closed. The external SSO backend must store each
+endpoint secret securely and send it only over HTTPS.
 
-For a temporary controlled rollout before the edge authorizer is available,
-the deployment owner may explicitly approve an exception. That approval must
-be recorded with an owner, scope, expiry, and rollback plan; the routes must
-remain private or restricted to approved caller egress ranges, and the
-exception must never be treated as authentication for unrestricted public
-traffic. The deployment owner remains responsible for the workload identity,
-network restrictions, and bypass testing.
+The deployment provisions these endpoint credentials in OpenShift Secrets and
+injects them with `secretKeyRef`:
+
+- `USER_MANAGEMENT_API_SECRET` for `/api/v1/users` and descendants;
+- `USAGE_REPORT_API_SECRET` for `/api/v1/usage/reports` and legacy
+  `/api/v1/usage/users/...`;
+- `MODEL_POLICY_API_SECRET` for `/api/v1/model-policies/users/...`; and
+- `MODEL_CATALOG_API_SECRET` for `/api/v1/models`.
+
+The SSO backend must obtain these values through the approved secret-sharing
+process; they must never be placed in Git, manifests, URLs, logs, or browser
+code.
 
 Partner key operations (list, mint, revoke, deactivate) additionally need
 `PARTNER_USER_KEY_GROUP`, the MaaS group presented for every key call. It has
@@ -455,9 +463,7 @@ deployed together. The deploy script builds Praxis from the supplied pushed
 `PRAXIS_SOURCE_SHA` and pins the resulting digest. When enabled, Praxis buffers
 the request body up to 32 MiB so the public model ID is checked before
 inference is forwarded. Keep partner APIs behind the edge-authenticated routes
-whenever possible; if an explicitly approved temporary exception is used, keep
-the routes private and restricted to approved egress ranges. Never expose a
-catch-all route to the Metering service.
+as defense-in-depth and never expose a catch-all route to the Metering service.
 
 ### 4.3 CloudNativePG PostgreSQL
 

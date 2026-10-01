@@ -27,6 +27,7 @@ RETIRE_LEGACY_GATEWAY_HOSTS="${RETIRE_LEGACY_GATEWAY_HOSTS:-false}"
 PRAXIS_PUBLIC_ADMIN="${PRAXIS_PUBLIC_ADMIN:-false}"
 export PRAXIS_PUBLIC_ADMIN
 METERING_INTERNAL_AUTH_CHANGED=false
+METERING_PARTNER_API_CHANGED=false
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROFILE_DIR="$SCRIPT_DIR/overlays/$PROFILE"
 
@@ -315,6 +316,49 @@ if [[ "$PROFILE" == enmaas ]] && \
   METERING_INTERNAL_AUTH_CHANGED=true
 fi
 
+# Endpoint-specific partner API credentials protect direct Service and
+# port-forward access as well as the public Route. Preserve existing values on
+# reruns; rotate only when explicitly requested. Values are written through
+# mode-0700 temporary directories and file inputs so secrets never appear in
+# command arguments, manifests, logs, or ConfigMaps.
+if [[ "$PROFILE" == enmaas ]] && \
+   (! secret_exists metering-partner-api || [[ "${ROTATE_METERING_PARTNER_API_SECRETS:-false}" == true ]]); then
+  (
+    umask 077
+    secret_dir="$(mktemp -d)"
+    trap 'rm -rf "$secret_dir"' EXIT
+    usage_report_secret="${USAGE_REPORT_API_SECRET:-$(openssl rand -hex 32)}"
+    model_policy_secret="${MODEL_POLICY_API_SECRET:-$(openssl rand -hex 32)}"
+    model_catalog_secret="${MODEL_CATALOG_API_SECRET:-$(openssl rand -hex 32)}"
+    printf '%s' "$usage_report_secret" >"$secret_dir/usage-report"
+    printf '%s' "$model_policy_secret" >"$secret_dir/model-policy"
+    printf '%s' "$model_catalog_secret" >"$secret_dir/model-catalog"
+    unset usage_report_secret model_policy_secret model_catalog_secret
+    oc -n "$NAMESPACE" create secret generic metering-partner-api \
+      --from-file=usage-report="$secret_dir/usage-report" \
+      --from-file=model-policy="$secret_dir/model-policy" \
+      --from-file=model-catalog="$secret_dir/model-catalog" \
+      --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
+  )
+  METERING_PARTNER_API_CHANGED=true
+fi
+
+if [[ "$PROFILE" == enmaas ]] && \
+   (! secret_exists metering-user-management-api || [[ "${ROTATE_METERING_USER_MANAGEMENT_API_SECRET:-false}" == true ]]); then
+  (
+    umask 077
+    secret_dir="$(mktemp -d)"
+    trap 'rm -rf "$secret_dir"' EXIT
+    user_management_secret="${USER_MANAGEMENT_API_SECRET:-$(openssl rand -hex 32)}"
+    printf '%s' "$user_management_secret" >"$secret_dir/token"
+    unset user_management_secret
+    oc -n "$NAMESPACE" create secret generic metering-user-management-api \
+      --from-file=token="$secret_dir/token" \
+      --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
+  )
+  METERING_PARTNER_API_CHANGED=true
+fi
+
 # Cluster-scoped CRDs and the pinned CNPG operator are apply-safe. The operator
 # is installed once per cluster; the namespaced Cluster is safe to reconcile.
 for crd in "$SCRIPT_DIR"/crds/*.yaml; do
@@ -494,7 +538,7 @@ if [[ "$PROFILE" == enmaas && "$METERING_INTERNAL_AUTH_CHANGED" == true ]]; then
   oc -n "$NAMESPACE" rollout restart deployment/praxis
 fi
 if [[ "$PROFILE" == enmaas ]] && \
-   [[ "$METERING_INTERNAL_AUTH_CHANGED" == true ]]; then
+   [[ "$METERING_INTERNAL_AUTH_CHANGED" == true || "$METERING_PARTNER_API_CHANGED" == true ]]; then
   oc -n "$NAMESPACE" rollout restart deployment/metering-service
 fi
 

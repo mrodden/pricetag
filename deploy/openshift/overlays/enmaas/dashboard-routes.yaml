@@ -218,12 +218,10 @@ spec:
   tls: { termination: edge }
 ---
 # Partner API paths are path-scoped to avoid exposing the metering service's
-# entire listener. Authentication is a deployment responsibility: the
-# preferred control is an OpenShift Route/AuthPolicy or equivalent edge
-# authorizer. The Metering handlers intentionally do not implement app-level
-# bearer-token authentication. A temporary exception requires explicit
-# deployment-owner approval and private-network/egress restrictions; it is not
-# suitable for unrestricted public exposure.
+# entire listener. The Metering handlers require endpoint-specific bearer
+# credentials; Route/AuthPolicy remains defense-in-depth and should still
+# authenticate the external workload. Direct Service and port-forward access
+# without the application bearer must fail closed.
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
