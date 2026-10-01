@@ -1,0 +1,24 @@
+---
+# ACME issuer for the public EnMaaS hostnames.
+#
+# HTTP-01, not DNS-01: the devshift.net zone is owned by the app-sre AWS
+# account and managed in app-interface (data/aws/app-sre/dns/devshift.net.yaml),
+# so this cluster holds no credentials to publish ACME TXT records. HTTP-01
+# needs only the public CNAME that already resolves to this router;
+# cert-manager creates a temporary Ingress for the challenge, which OpenShift
+# converts into a short-lived Route on port 80.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # Expiry notices for the EnMaaS public certificates.
+    email: bturner@redhat.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: openshift-default
