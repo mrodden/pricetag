@@ -195,6 +195,12 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
       fail "$policy does not allow the configured RDS CIDR on TCP/5432"
     fi
   done
+  for policy in enmaas-allow-maas-api-kube-api enmaas-allow-metering-kube-api; do
+    if ! yq -e "select(.kind == \"NetworkPolicy\" and .metadata.name == \"$policy\") | .spec.egress[] | select(.to[]?.ipBlock.cidr == \"$KUBE_API_SERVICE_IP/32\") | .ports[] | select(.protocol == \"TCP\" and .port == 443)" \
+      "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+      fail "$policy must allow Kubernetes API service HTTPS egress"
+    fi
+  done
 
   if ! yq -e "select(.kind == \"NetworkPolicy\" and .metadata.name == \"enmaas-allow-dns\") | .spec.egress[] | select(.to[]?.ipBlock.cidr == \"$KUBE_DNS_SERVICE_IP/32\") | .ports[] | select(.protocol == \"UDP\" and .port == 53)" \
     "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then

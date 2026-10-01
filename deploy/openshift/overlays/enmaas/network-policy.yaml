@@ -214,6 +214,33 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  name: enmaas-allow-metering-kube-api
+spec:
+  # The model catalog adapter reads the allowlisted praxis-config ConfigMap
+  # through the Kubernetes API. Keep this egress as narrow as MaaS API's
+  # equivalent rule; the Metering Role still limits which objects it can read.
+  podSelector:
+    matchLabels:
+      app: metering-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: ${KUBE_API_SERVICE_IP}/32
+      ports:
+        - protocol: TCP
+          port: 443
+    - to:
+        - ipBlock:
+            cidr: ${KUBE_API_ENDPOINT_IP}/32
+      ports:
+        - protocol: TCP
+          port: 6443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: enmaas-allow-cnpg-kube-api
 spec:
   podSelector:
