@@ -107,12 +107,17 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
       fi
     done
     token_requirement='false'
-    [[ "$deployment" == "maas-api" ]] && token_requirement='true'
+    [[ "$deployment" == "maas-api" || "$deployment" == "metering-service" ]] && token_requirement='true'
     if ! yq -e "select(.kind == \"Deployment\" and .metadata.name == \"$deployment\") | .spec.template.spec.automountServiceAccountToken == $token_requirement" \
         "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
       fail "$deployment has incorrect ServiceAccount token automount policy (expected $token_requirement)"
     fi
   done
+
+  if ! yq -e 'select(.kind == "Role" and .metadata.name == "metering-service") | .rules[] | select((.resources | join(",")) == "configmaps" and (.resourceNames | join(",")) == "praxis-config" and (.verbs | join(",")) == "get")' \
+    "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+    fail "metering-service ServiceAccount token requires a Role limited to get praxis-config"
+  fi
 
   # The admin port may appear on the Service only as the named metrics port
   # for Prometheus; reachability is governed by the 9901 NetworkPolicies checked

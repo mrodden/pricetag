@@ -156,6 +156,13 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 2
+      # The global model catalog reads the allowlisted praxis-config through
+      # the in-cluster Kubernetes API. The matching Role is restricted to that
+      # ConfigMap (and the existing MaaS subscription read), so this token does
+      # not grant broad namespace access.
+      - op: replace
+        path: /spec/template/spec/automountServiceAccountToken
+        value: true
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value:
