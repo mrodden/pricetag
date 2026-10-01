@@ -47,6 +47,10 @@ echo "== shell syntax =="
 while IFS= read -r -d '' script; do
   bash -n "$script"
 done < <(find deploy tools -type f -name '*.sh' -print0)
+[[ -x tools/validate-live-enmaas.sh ]] || {
+  echo "tools/validate-live-enmaas.sh must be executable" >&2
+  exit 1
+}
 
 echo "== Python syntax =="
 while IFS= read -r -d '' source; do
@@ -62,6 +66,7 @@ grep -q 'EXPECTED_OC_SERVER' deploy/openshift/deploy.sh
 grep -q 'PROTECTED_OC_SERVER' deploy/openshift/deploy.sh
 grep -q 'CONFIRM_DEPLOYMENT' deploy/openshift/deploy.sh
 grep -q 'pricetag.io/praxis-config-checksum' deploy/openshift/deploy.sh
+grep -q 'PREFLIGHT_ONLY' deploy/openshift/deploy.sh
 
 echo "== Kustomize profiles =="
 for profile in test dogfood enmaas; do
@@ -200,6 +205,10 @@ done
 
 yq -e 'select(.kind == "Deployment" and .metadata.name == "metering-service") | .spec.template.spec.containers[0].env[] | select(.name == "DASHBOARD_USE_ROLLUPS" and .value == "false")' \
   "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
+for deployment in maas-api metering-service praxis; do
+  yq -e "select(.kind == \"Deployment\" and .metadata.name == \"$deployment\") | select(.spec.strategy.type == \"RollingUpdate\" and .spec.strategy.rollingUpdate.maxUnavailable == 0 and .spec.strategy.rollingUpdate.maxSurge == 1)" \
+    "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
+done
 
 echo "== EnMaaS Vertex contract =="
 grep -q 'model_to_provider' "$TMP_DIR/praxis.yaml"

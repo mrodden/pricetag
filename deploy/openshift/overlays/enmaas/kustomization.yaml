@@ -113,6 +113,32 @@ patches:
                   - containerPort: 8082
                     $patch: delete
   - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: maas-api
+    patch: |-
+      - op: add
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate:
+            maxUnavailable: 0
+            maxSurge: 1
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: praxis
+    patch: |-
+      - op: add
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate:
+            maxUnavailable: 0
+            maxSurge: 1
+  - target:
       version: v1
       kind: Service
       name: praxis
@@ -163,6 +189,13 @@ patches:
       - op: replace
         path: /spec/template/spec/automountServiceAccountToken
         value: true
+      - op: add
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate:
+            maxUnavailable: 0
+            maxSurge: 1
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value:

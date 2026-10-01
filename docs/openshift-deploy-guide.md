@@ -271,6 +271,18 @@ Route is admitted. Retiring the host is a user-facing change; announce it first.
 Before the main apply, `deploy.sh` prints `oc diff` of the rendered manifests so
 the operator sees every object the run is about to change.
 
+For a completely non-mutating live gate, run `tools/validate-live-enmaas.sh`
+with the dedicated target kubeconfig, `EXPECTED_OC_SERVER`, and
+`PROTECTED_OC_SERVER` first. It verifies workload readiness, explicit
+`maxUnavailable=0/maxSurge=1` rolling safety, digest-pinned images, TLS/router
+Secret access, required NetworkPolicies, and required application Secrets.
+The deployment should stop if this check fails.
+
+NetworkPolicy changes must be source-controlled with the workload they protect.
+In particular, a Metering Kubernetes adapter needs both its narrow Role for
+`praxis-config` and egress to the Kubernetes Service/API endpoint; one without
+the other produces an apparently healthy service but a `503` model catalog.
+
 #### Praxis metrics
 
 Praxis serves `/metrics`, `/ready` and `/healthy` on its admin listener and, by
