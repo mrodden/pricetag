@@ -235,6 +235,13 @@ export CONFIRM_DEPLOYMENT=true
 ./deploy/openshift/deploy.sh
 ```
 
+The EnMaaS deploy accepts an optional approved MaaSSubscription manifest via
+`MAAS_GE_SUBSCRIPTION_MANIFEST`. The manifest must contain the approved `GE`
+owner group and real `MaaSModelRef` names with token limits. The installer
+applies it opportunistically and continues if it is absent or cannot be
+applied; key operations remain fail-closed until the subscription is verified.
+Do not invent model references or rate limits in the deployment script.
+
 #### Public host certificates and the legacy gateway host
 
 `api.enmaas.devshift.net` and `dashboard.enmaas.devshift.net` are outside the

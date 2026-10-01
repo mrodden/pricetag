@@ -14,6 +14,10 @@ UPDATE_CONFIG="${UPDATE_CONFIG:-false}"
 DATABASE_BACKEND="${DATABASE_BACKEND:-cnpg}"
 METERING_MODEL_POLICY_CHECK="${METERING_MODEL_POLICY_CHECK:-false}"
 export METERING_MODEL_POLICY_CHECK
+# Optional approved MaaSSubscription manifest. EnMaaS installation must not
+# depend on the subscription being ready: the manifest is applied when supplied
+# and failures are warnings so the platform can still be installed safely.
+MAAS_GE_SUBSCRIPTION_MANIFEST="${MAAS_GE_SUBSCRIPTION_MANIFEST:-}"
 # The former router-generated gateway host keeps serving next to the canonical
 # host until this is set to true; retiring it is an announced user-facing change.
 RETIRE_LEGACY_GATEWAY_HOSTS="${RETIRE_LEGACY_GATEWAY_HOSTS:-false}"
@@ -316,6 +320,30 @@ fi
 for crd in "$SCRIPT_DIR"/crds/*.yaml; do
   oc apply -f "$crd"
 done
+
+# A valid GE subscription needs real MaaSModelRef names and token limits; those
+# are environment/operator-specific and must not be invented here. If the
+# route/MaaS owner supplies an approved manifest, apply it opportunistically
+# after the CRD exists. A missing, not-ready, or invalid subscription must not
+# prevent installation; key endpoints remain fail-closed until the group and
+# subscription are verified separately.
+if [[ "$PROFILE" == enmaas ]]; then
+  if [[ -n "$MAAS_GE_SUBSCRIPTION_MANIFEST" ]]; then
+    if [[ ! -f "$MAAS_GE_SUBSCRIPTION_MANIFEST" ]]; then
+      echo "WARNING: MAAS_GE_SUBSCRIPTION_MANIFEST does not exist; continuing without GE subscription" >&2
+    else
+      subscription_tmp="$(mktemp)"
+      envsubst '${NAMESPACE}' < "$MAAS_GE_SUBSCRIPTION_MANIFEST" > "$subscription_tmp"
+      if ! oc wait --for=condition=Established crd/maassubscriptions.maas.opendatahub.io --timeout=60s >/dev/null 2>&1 || \
+         ! oc apply -f "$subscription_tmp"; then
+        echo "WARNING: GE MaaSSubscription could not be applied; continuing installation" >&2
+      fi
+      rm -f "$subscription_tmp"
+    fi
+  else
+    echo "WARNING: no MAAS_GE_SUBSCRIPTION_MANIFEST supplied; continuing without GE subscription" >&2
+  fi
+fi
 # The vendored CNPG CRDs exceed the client-side apply annotation limit.
 # Server-side apply keeps the schema in managed fields instead.
 oc apply --server-side --force-conflicts \
