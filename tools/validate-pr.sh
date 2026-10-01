@@ -133,6 +133,23 @@ grep -q 'claude-sonnet-4-5' "$TMP_DIR/praxis.yaml"
 grep -q 'beta_allowlist' "$TMP_DIR/praxis.yaml"
 grep -q 'internal_auth_file' "$TMP_DIR/praxis.yaml"
 
+echo "== EnMaaS model-catalog hygiene =="
+# The base anthropic/OpenAI model_catalog filters still render into the EnMaaS
+# ConfigMap alongside the Vertex-only catalog; Metering's /api/v1/models dedups
+# across every model_catalog entry. Guard against stale or non-public ids
+# leaking back into the EnMaaS-advertised catalog. Dated model ids and the
+# octo-eng-only Fable model must not appear.
+for stale_id in claude-haiku-4-5-20251001 claude-fable-5; do
+  if grep -q "$stale_id" "$TMP_DIR/praxis.yaml"; then
+    echo "stale/non-public model id '$stale_id' leaked into the EnMaaS catalog" >&2
+    exit 1
+  fi
+done
+if grep -nE 'id: claude-[a-z]+-[0-9.]+-[0-9]{8}' "$TMP_DIR/praxis.yaml"; then
+  echo "dated Claude model id must not appear in the EnMaaS catalog" >&2
+  exit 1
+fi
+
 echo "== secret-pattern scan =="
 if git grep -n -I -E 'BEGIN (RSA|OPENSSH|EC|DSA) PRIVATE KEY|sk-[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{20,}' -- ':!*.lock'; then
   echo "possible credential material found in tracked files" >&2

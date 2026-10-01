@@ -242,10 +242,6 @@ data:
                 display_name: "Claude Opus 4.8"
               - id: claude-sonnet-5
                 display_name: "Claude Sonnet 5"
-              - id: claude-haiku-4-5-20251001
-                display_name: "Claude Haiku 4.5"
-              - id: claude-fable-5
-                display_name: "Claude Fable 5 (octo-eng only)"
               - id: rits/zai-org/glm-5-3
                 display_name: "GLM 5.3 (hosted via curvebender)"
               # EnMaaS adds its Vertex model catalog entry at this marker.
