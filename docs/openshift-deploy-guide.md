@@ -413,18 +413,26 @@ oc create secret generic cnpg-backup-cos -n "$NS" \
 The EnMaaS dashboard host exposes three path-scoped HTTPS APIs for external
 service integrations:
 
-| API | Methods and path | Route authentication |
+| API | Methods and path | Authentication expectation |
 |-----|------------------|---------------------|
-| User directory and MaaS keys | `GET`, `POST /api/v1/users`; `GET`, `PUT`, `DELETE /api/v1/users/{user_id}`; `GET`, `POST /api/v1/users/{user_id}/keys`; `DELETE /api/v1/users/{user_id}/keys/{key_id}`; `POST /api/v1/users/{user_id}/reactivate` | OpenShift Route/AuthPolicy |
-| Batch user usage report | `POST /api/v1/usage/reports` | OpenShift Route/AuthPolicy |
-| User model allowlist | `GET`, `PUT`, `DELETE /api/v1/model-policies/users/{user_id}/allowlist` | OpenShift Route/AuthPolicy |
-| Global model catalog | `GET /api/v1/models` | OpenShift Route/AuthPolicy; no MaaS key required |
+| User directory and MaaS keys | `GET`, `POST /api/v1/users`; `GET`, `PUT`, `DELETE /api/v1/users/{user_id}`; `GET`, `POST /api/v1/users/{user_id}/keys`; `DELETE /api/v1/users/{user_id}/keys/{key_id}`; `POST /api/v1/users/{user_id}/reactivate` | Edge authentication preferred; temporary exception requires explicit approval and private access |
+| Batch user usage report | `POST /api/v1/usage/reports` | Edge authentication preferred; temporary exception requires explicit approval and private access |
+| User model allowlist | `GET`, `PUT`, `DELETE /api/v1/model-policies/users/{user_id}/allowlist` | Edge authentication preferred; temporary exception requires explicit approval and private access |
+| Global model catalog | `GET /api/v1/models` | Edge authentication preferred; temporary exception requires explicit approval and private access; no MaaS key required |
 
 The Metering listener intentionally does not authenticate these partner paths.
-The OpenShift Route/AuthPolicy must authenticate the Atlas/AIR/AIBH caller and
-must prevent direct Service or port-forward bypass. Do not distribute a
-Metering bearer token; the route owner is responsible for the workload
-identity/mTLS or equivalent AuthPolicy and any IP restrictions.
+The preferred deployment uses an OpenShift Route/AuthPolicy, OIDC/JWT,
+mTLS, or an equivalent edge authorizer to authenticate the Atlas/AIR/AIBH
+caller and prevent direct Service or port-forward bypass. Do not distribute a
+Metering bearer token.
+
+For a temporary controlled rollout before the edge authorizer is available,
+the deployment owner may explicitly approve an exception. That approval must
+be recorded with an owner, scope, expiry, and rollback plan; the routes must
+remain private or restricted to approved caller egress ranges, and the
+exception must never be treated as authentication for unrestricted public
+traffic. The deployment owner remains responsible for the workload identity,
+network restrictions, and bypass testing.
 
 Partner key operations (list, mint, revoke, deactivate) additionally need
 `PARTNER_USER_KEY_GROUP`, the MaaS group presented for every key call. It has
@@ -446,8 +454,10 @@ when the Metering model-policy API and matching Praxis model-preflight image are
 deployed together. The deploy script builds Praxis from the supplied pushed
 `PRAXIS_SOURCE_SHA` and pins the resulting digest. When enabled, Praxis buffers
 the request body up to 32 MiB so the public model ID is checked before
-inference is forwarded. Keep partner APIs behind these authenticated routes; do
-not expose a catch-all route to the Metering service.
+inference is forwarded. Keep partner APIs behind the edge-authenticated routes
+whenever possible; if an explicitly approved temporary exception is used, keep
+the routes private and restricted to approved egress ranges. Never expose a
+catch-all route to the Metering service.
 
 ### 4.3 CloudNativePG PostgreSQL
 
