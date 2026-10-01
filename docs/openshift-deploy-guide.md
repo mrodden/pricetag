@@ -380,11 +380,12 @@ Metering bearer token; the route owner is responsible for the workload
 identity/mTLS or equivalent AuthPolicy and any IP restrictions.
 
 Partner key operations (list, mint, revoke, deactivate) additionally need
-`PARTNER_USER_KEY_GROUP`, the MaaS group presented for every key call. It has
-no default: the group must already exist in MaaS with an accessible
-subscription, and the value is an operator decision tracked in PriceTag #31.
-Until it is set, those endpoints answer `503` while user CRUD, search, usage
-reports and model policies work normally. The `/api/v1/users` Route carries
+`PARTNER_USER_KEY_GROUP`, the MaaS group presented for every key call. The
+deployment default is `GE`; `GE` must already exist in MaaS with an accessible
+subscription. Override `PARTNER_USER_KEY_GROUP` explicitly when an environment
+uses a different approved group. Until the selected group is available, those
+endpoints answer `503` while user CRUD, search, usage reports and model
+policies work normally. The `/api/v1/users` Route carries
 HAProxy connection rate limits; before the user-management credential is
 distributed, add `haproxy.router.openshift.io/ip_whitelist` with the Atlas and
 AIBH egress ranges to that Route.
