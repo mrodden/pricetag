@@ -119,7 +119,7 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
     fail "dashboard-api-users (key-minting path) must carry HAProxy rate limiting"
   fi
   if grep -Eq 'PARTNER_USER_KEY_GROUP[^\n]*value:' deploy/openshift/overlays/enmaas/kustomization.yaml; then
-    fail "PARTNER_USER_KEY_GROUP must not be hardcoded in the overlay; deploy.sh supplies the GE default or an explicit override"
+    fail "PARTNER_USER_KEY_GROUP must not be hardcoded in the overlay; it is a per-deployment decision"
   fi
 
   for route in dashboard-api-usage dashboard-api-model-policies dashboard-api-users dashboard-api-models; do

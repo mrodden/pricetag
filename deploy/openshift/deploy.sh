@@ -13,11 +13,6 @@ ROTATE_SECRETS="${ROTATE_SECRETS:-false}"
 UPDATE_CONFIG="${UPDATE_CONFIG:-false}"
 DATABASE_BACKEND="${DATABASE_BACKEND:-cnpg}"
 METERING_MODEL_POLICY_CHECK="${METERING_MODEL_POLICY_CHECK:-false}"
-# Canonical MaaS group for partner-managed keys. Keep this as a deployment
-# default rather than putting it in the rendered overlay so future EnMaaS
-# deployments enable the key APIs consistently. Override it explicitly when
-# deploying to an environment that uses a different approved group.
-PARTNER_USER_KEY_GROUP="${PARTNER_USER_KEY_GROUP:-GE}"
 export METERING_MODEL_POLICY_CHECK
 METERING_INTERNAL_AUTH_CHANGED=false
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -411,9 +406,10 @@ if [[ "$PROFILE" == enmaas ]]; then
     >/dev/null
 fi
 
-# The MaaS group presented on partner key operations. GE is the canonical
-# EnMaaS deployment default; it must exist with an accessible subscription.
-# An alternate approved group can be supplied through the environment.
+# The MaaS group presented on partner key operations. There is deliberately no
+# default: it must be an approved MaaS group with an accessible subscription.
+# When the operator omits it, actively remove any value left by an earlier
+# deployment; otherwise a rerun could silently keep key issuance enabled.
 if [[ "$PROFILE" == enmaas ]]; then
   if [[ -n "${PARTNER_USER_KEY_GROUP:-}" ]]; then
     [[ "$PARTNER_USER_KEY_GROUP" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$ ]] || die "PARTNER_USER_KEY_GROUP is not a valid group name"
