@@ -6,6 +6,7 @@ namespace: enmaas
 resources:
   - namespace.yaml
   - maas-api-rbac-binding.yaml
+  - router-tls-rbac.yaml
   - network-policy.yaml
   - dashboard-routes.yaml
   - ../../base
@@ -33,6 +34,37 @@ patches:
       kind: Route
       metadata:
         name: dashboard
+  # Every Route on the public gateway and dashboard hosts carries the host
+  # certificate itself. The router serves one certificate per host, taken from
+  # an admitted Route that has one; if only some Routes carry it, deleting those
+  # breaks TLS for every path. Keeping the reference on all of them removes that
+  # dependency and makes git the single source of truth for the hosts.
+  - target:
+      group: route.openshift.io
+      version: v1
+      kind: Route
+      labelSelector: app=praxis
+    patch: |-
+      - op: add
+        path: /spec/tls/externalCertificate
+        value:
+          name: api-enmaas-tls
+      - op: add
+        path: /spec/tls/insecureEdgeTerminationPolicy
+        value: Redirect
+  - target:
+      group: route.openshift.io
+      version: v1
+      kind: Route
+      labelSelector: app=metering-service
+    patch: |-
+      - op: add
+        path: /spec/tls/externalCertificate
+        value:
+          name: dashboard-enmaas-tls
+      - op: add
+        path: /spec/tls/insecureEdgeTerminationPolicy
+        value: Redirect
   - path: praxis-vertex-secret-mount.yaml
     target:
       group: apps
@@ -91,6 +123,12 @@ patches:
         ports:
           - port: 8082
             $patch: delete
+          # Prometheus in enmaas-monitoring scrapes praxis.enmaas.svc:9901.
+          # Reachable only when PRAXIS_PUBLIC_ADMIN=true; ingress to 9901 is
+          # restricted by NetworkPolicy to the monitoring namespaces.
+          - name: metrics
+            port: 9901
+            targetPort: 9901
   - target:
       group: apps
       version: v1

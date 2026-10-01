@@ -235,6 +235,46 @@ export CONFIRM_DEPLOYMENT=true
 ./deploy/openshift/deploy.sh
 ```
 
+#### Public host certificates and the legacy gateway host
+
+`api.enmaas.devshift.net` and `dashboard.enmaas.devshift.net` are outside the
+cluster wildcard, so every Route on them terminates edge TLS with
+`spec.tls.externalCertificate` pointing at the `kubernetes.io/tls` Secrets
+`api-enmaas-tls` and `dashboard-enmaas-tls`. Those Secrets are created and
+renewed out of band and are never committed; the rendered overlay only
+references them and grants the `openshift-ingress` router service account
+`get/list/watch` on exactly those two Secrets. `deploy.sh` refuses to apply the
+EnMaaS profile while either Secret is missing, because the router does not admit
+a Route whose certificate Secret cannot be read.
+
+Every Route on a host must carry the reference. The router serves one
+certificate per host, taken from an admitted Route that has one; a mixed set
+where only some Routes carry the certificate works until those are deleted, and
+then TLS fails for every path. The validators reject any Route on a public host
+without the reference.
+
+Users onboarded before the cutover still use the router-generated host
+`ai-gateway-<namespace>.<cluster apps domain>`. `deploy.sh` keeps compatibility
+Routes for the five gateway paths on that host
+(`overlays/enmaas/legacy-gateway-routes.yaml`, labelled
+`pricetag.io/legacy-gateway-host=true`) until `RETIRE_LEGACY_GATEWAY_HOSTS=true`
+is set, which deletes them at the end of a run and only after every canonical
+Route is admitted. Retiring the host is a user-facing change; announce it first.
+
+Before the main apply, `deploy.sh` prints `oc diff` of the rendered manifests so
+the operator sees every object the run is about to change.
+
+#### Praxis metrics
+
+Praxis serves `/metrics`, `/ready` and `/healthy` on its admin listener and, by
+default, binds it to loopback, which Prometheus cannot reach. Set
+`PRAXIS_PUBLIC_ADMIN=true` for the EnMaaS profile to bind `0.0.0.0:9901` with
+`insecure_options.allow_public_admin: true`; the Service then exposes the
+`metrics` port for `praxis.<namespace>.svc:9901`. Ingress to 9901 is restricted
+by NetworkPolicy to the monitoring namespaces, and
+`tools/security-static-validate.sh` refuses the opt-in render without that rule.
+Changing the flag changes `praxis-config`, so the deploy rolls Praxis.
+
 For an externally managed PostgreSQL target such as RDS, set the backend mode
 and provide complete TLS-enabled connection URLs from the secure operations
 environment. The deploy script derives the MaaS, metering, and dashboard read

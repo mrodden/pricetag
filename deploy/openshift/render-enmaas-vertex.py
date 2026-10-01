@@ -51,6 +51,28 @@ def main() -> int:
     if policy_replacements != 3:
         raise ValueError(f"expected three metering model-policy markers, found {policy_replacements}")
 
+    # Praxis serves /metrics, /ready and /healthy on the admin listener and
+    # refuses any non-loopback bind unless insecure_options.allow_public_admin
+    # is set. Prometheus can only scrape it over the pod network, so EnMaaS can
+    # opt in; the validators require the 9901 ingress policy whenever it does.
+    public_admin = os.environ.get("PRAXIS_PUBLIC_ADMIN", "false")
+    if public_admin not in {"true", "false"}:
+        raise ValueError("PRAXIS_PUBLIC_ADMIN must be true or false")
+    if public_admin == "true":
+        admin_pattern = re.compile(r'(?m)^(?P<indent>[ \t]*)address: "127\.0\.0\.1:9901"\s*$')
+        rendered, admin_replacements = admin_pattern.subn(
+            lambda match: f'{match.group("indent")}address: "0.0.0.0:9901"', rendered
+        )
+        if admin_replacements != 1:
+            raise ValueError(f"expected one Praxis admin address, found {admin_replacements}")
+        options_pattern = re.compile(r"(?m)^(?P<indent>[ \t]*)insecure_options: \{\}\s*$")
+        rendered, options_replacements = options_pattern.subn(
+            lambda match: f'{match.group("indent")}insecure_options:\n{match.group("indent")}  allow_public_admin: true',
+            rendered,
+        )
+        if options_replacements != 1:
+            raise ValueError(f"expected one empty Praxis insecure_options block, found {options_replacements}")
+
     sys.stdout.write(rendered)
     return 0
 

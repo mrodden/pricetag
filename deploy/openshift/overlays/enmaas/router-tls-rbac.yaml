@@ -1,0 +1,52 @@
+# The EnMaaS public hosts use certificates stored as kubernetes.io/tls Secrets
+# (api-enmaas-tls, dashboard-enmaas-tls) referenced through Route
+# spec.tls.externalCertificate. The Secrets are created out of band and are
+# never committed; deploy.sh refuses to render Routes that reference a Secret
+# which does not exist. The ingress router service account must be able to read
+# exactly those Secrets, and nothing else in the namespace.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: router-read-api-enmaas-tls
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [api-enmaas-tls]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: router-read-api-enmaas-tls
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: router-read-api-enmaas-tls
+subjects:
+  - kind: ServiceAccount
+    name: router
+    namespace: openshift-ingress
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: router-read-dashboard-enmaas-tls
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [dashboard-enmaas-tls]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: router-read-dashboard-enmaas-tls
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: router-read-dashboard-enmaas-tls
+subjects:
+  - kind: ServiceAccount
+    name: router
+    namespace: openshift-ingress

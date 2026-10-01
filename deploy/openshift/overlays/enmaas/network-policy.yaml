@@ -268,3 +268,52 @@ spec:
     - ports:
         - protocol: TCP
           port: 443
+---
+# The EnMaaS Prometheus (namespace enmaas-monitoring) scrapes Praxis (9901),
+# maas-api (9090), metering-service (8080) and the Postgres exporters (9187).
+# This allow rule existed only on the cluster before it was recorded here; the
+# default-deny rollout without it blanked every dashboard for two hours.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: enmaas-allow-monitoring-scrape
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: enmaas-monitoring
+      ports:
+        - protocol: TCP
+          port: 9187
+        - protocol: TCP
+          port: 9901
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 8080
+---
+# The RDS postgres-exporter is deployed by the monitoring stack, not by this
+# repository; its egress to RDS is recorded here so the namespace policy set in
+# git matches the cluster. Ingress is limited to the monitoring scrape rule.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: enmaas-allow-rds-exporter-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: rds-postgres-exporter
+  policyTypes:
+    - Ingress
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: ${RDS_EGRESS_CIDR}
+      ports:
+        - protocol: TCP
+          port: 5432

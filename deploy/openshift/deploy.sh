@@ -14,6 +14,14 @@ UPDATE_CONFIG="${UPDATE_CONFIG:-false}"
 DATABASE_BACKEND="${DATABASE_BACKEND:-cnpg}"
 METERING_MODEL_POLICY_CHECK="${METERING_MODEL_POLICY_CHECK:-false}"
 export METERING_MODEL_POLICY_CHECK
+# The former router-generated gateway host keeps serving next to the canonical
+# host until this is set to true; retiring it is an announced user-facing change.
+RETIRE_LEGACY_GATEWAY_HOSTS="${RETIRE_LEGACY_GATEWAY_HOSTS:-false}"
+# Bind the Praxis admin listener (/metrics, /ready, /healthy) on the pod network
+# so Prometheus can scrape it. Ingress to 9901 is limited by NetworkPolicy to the
+# monitoring namespaces; the static baseline refuses the flag without that rule.
+PRAXIS_PUBLIC_ADMIN="${PRAXIS_PUBLIC_ADMIN:-false}"
+export PRAXIS_PUBLIC_ADMIN
 METERING_INTERNAL_AUTH_CHANGED=false
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROFILE_DIR="$SCRIPT_DIR/overlays/$PROFILE"
@@ -28,6 +36,8 @@ die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 [[ "$METERING_MODEL_POLICY_CHECK" == true || "$METERING_MODEL_POLICY_CHECK" == false ]] || \
   die "METERING_MODEL_POLICY_CHECK must be true or false"
+[[ "$PRAXIS_PUBLIC_ADMIN" == true || "$PRAXIS_PUBLIC_ADMIN" == false ]] || \
+  die "PRAXIS_PUBLIC_ADMIN must be true or false"
 
 [[ -f "$PRICETAG_KUBECONFIG" ]] || die "PRICETAG_KUBECONFIG does not point to a file"
 
@@ -144,7 +154,10 @@ done
 GATEWAY_HOST="${GATEWAY_HOST:-ai-gateway-${NAMESPACE}.${ROUTE_DOMAIN}}"
 GATEWAY_URL="${GATEWAY_URL:-https://${GATEWAY_HOST}}"
 DASHBOARD_HOST="${DASHBOARD_HOST:-dashboard-${NAMESPACE}.${ROUTE_DOMAIN}}"
-export GATEWAY_HOST GATEWAY_URL DASHBOARD_HOST KUBE_DNS_SERVICE_IP KUBE_API_SERVICE_IP KUBE_API_ENDPOINT_IP
+LEGACY_GATEWAY_HOST="${LEGACY_GATEWAY_HOST:-ai-gateway-${NAMESPACE}.${ROUTE_DOMAIN}}"
+[[ "$RETIRE_LEGACY_GATEWAY_HOSTS" == true || "$RETIRE_LEGACY_GATEWAY_HOSTS" == false ]] || \
+  die "RETIRE_LEGACY_GATEWAY_HOSTS must be true or false"
+export GATEWAY_HOST GATEWAY_URL DASHBOARD_HOST LEGACY_GATEWAY_HOST KUBE_DNS_SERVICE_IP KUBE_API_SERVICE_IP KUBE_API_ENDPOINT_IP
 
 if [[ "$PROFILE" == enmaas ]]; then
   : "${AWS_ROLE_ARN:?Set AWS_ROLE_ARN to the EnMaaS CNPG backup role ARN}"
@@ -382,7 +395,34 @@ if [[ "$PROFILE" == enmaas ]]; then
   mv "$RENDER_DIR/with-vertex.yaml" "$RENDER_DIR/manifests.yaml"
 fi
 envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_DIGEST} \${METERING_IMAGE_DIGEST} \${RDS_EGRESS_CIDR} \${KUBE_DNS_SERVICE_IP} \${KUBE_API_SERVICE_IP} \${KUBE_API_ENDPOINT_IP}" \
-  < "$RENDER_DIR/manifests.yaml" | oc apply -f -
+  < "$RENDER_DIR/manifests.yaml" > "$RENDER_DIR/final.yaml"
+
+# The public-host Routes reference certificates through externalCertificate.
+# The router rejects a Route whose Secret is missing, so refuse to apply rather
+# than leave the hosts on an unadmitted Route set.
+if [[ "$PROFILE" == enmaas ]]; then
+  for tls_secret in api-enmaas-tls dashboard-enmaas-tls; do
+    [[ "$(oc -n "$NAMESPACE" get secret "$tls_secret" -o jsonpath='{.type}' 2>/dev/null)" == kubernetes.io/tls ]] || \
+      die "TLS secret $tls_secret (type kubernetes.io/tls) must exist in $NAMESPACE before Routes can reference it"
+  done
+fi
+
+# Show exactly what this run will change before it changes it. oc diff exits 1
+# when differences exist, which is the normal case for a deploy.
+echo "== preflight: changes this deployment will apply =="
+oc diff -f "$RENDER_DIR/final.yaml" || true
+echo "== end preflight =="
+
+oc apply -f "$RENDER_DIR/final.yaml"
+
+# Compatibility Routes on the former gateway host are managed outside
+# kustomize so the same manifest can be applied or retired by flag. They are
+# skipped when no canonical host is configured (the two hosts would collide).
+# Retirement happens at the end of the run, after admission is verified.
+if [[ "$PROFILE" == enmaas && "$GATEWAY_HOST" != "$LEGACY_GATEWAY_HOST" && "$RETIRE_LEGACY_GATEWAY_HOSTS" == false ]]; then
+  envsubst "\${NAMESPACE} \${LEGACY_GATEWAY_HOST}" \
+    < "$PROFILE_DIR/legacy-gateway-routes.yaml" | oc apply -f -
+fi
 
 # The dashboard Route receives its host from OpenShift. Pass that canonical
 # host into the embedded welcome page so its Dashboard link never falls back
@@ -434,15 +474,18 @@ oc -n "$NAMESPACE" rollout status deployment/maas-api --timeout=180s
 oc -n "$NAMESPACE" rollout status deployment/metering-service --timeout=180s
 oc -n "$NAMESPACE" rollout status deployment/praxis --timeout=180s
 
-# Wait for every path route to be admitted before retiring old gateway hosts.
-# Route status keeps conditions under status.ingress, so oc wait's generic
-# condition handler is not reliable here.
+# Report Route admission. A Route is HostAlreadyClaimed when another Route in
+# the namespace holds the same host+path; traffic is served by that Route, so
+# this is not fatal, but it is exactly the state that must not be "cleaned up"
+# without a plan. Route status keeps conditions under status.ingress, so oc
+# wait's generic condition handler is not reliable here.
 required_routes=(ai-gateway ai-gateway-chat-completions ai-gateway-responses \
   ai-gateway-conversations ai-gateway-models dashboard-api-usage \
   dashboard-api-model-policies)
+unadmitted_routes=()
 for route in "${required_routes[@]}"; do
   admitted=false
-  for _ in {1..120}; do
+  for _ in {1..30}; do
     if [[ "$(oc -n "$NAMESPACE" get route "$route" \
       -o jsonpath='{.status.ingress[0].conditions[?(@.type=="Admitted")].status}')" == True ]]; then
       admitted=true
@@ -450,14 +493,24 @@ for route in "${required_routes[@]}"; do
     fi
     sleep 1
   done
-  [[ "$admitted" == true ]] || die "route was not admitted: $route"
+  [[ "$admitted" == true ]] || unadmitted_routes+=("$route")
 done
+if (( ${#unadmitted_routes[@]} > 0 )); then
+  echo "WARNING: routes not admitted (another Route holds the host+path claim):" >&2
+  for route in "${unadmitted_routes[@]}"; do
+    reason="$(oc -n "$NAMESPACE" get route "$route" \
+      -o jsonpath='{.status.ingress[0].conditions[?(@.type=="Admitted")].reason}')"
+    echo "  $route: ${reason:-no status}" >&2
+  done
+  # Retiring the legacy host requires every canonical path to be served by the
+  # Routes in this repository, not by a claim held elsewhere.
+  [[ "$RETIRE_LEGACY_GATEWAY_HOSTS" == false ]] || \
+    die "refusing to retire the legacy gateway host while canonical routes are not admitted"
+fi
 
-# Remove the former public gateway hostnames after the canonical path-routed
-# host and workloads are ready. The path routes above preserve each API.
-for legacy_route in ai-gateway-anthropic ai-gateway-openai ai-gateway-unified ai-gateway-benchmark; do
-  oc -n "$NAMESPACE" delete route "$legacy_route" --ignore-not-found=true
-done
+if [[ "$PROFILE" == enmaas && "$RETIRE_LEGACY_GATEWAY_HOSTS" == true ]]; then
+  oc -n "$NAMESPACE" delete route -l pricetag.io/legacy-gateway-host=true --ignore-not-found=true
+fi
 
 printf '\nPriceTag deployed to %s (%s)\n' "$NAMESPACE" "$PROFILE"
 printf 'Gateway: %s\n' "$GATEWAY_URL"

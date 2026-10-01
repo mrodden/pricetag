@@ -1,0 +1,94 @@
+# Compatibility Routes for the former router-generated gateway host
+# (ai-gateway-<namespace>.<cluster apps domain>). Users onboarded before the
+# api.enmaas.devshift.net cutover still have that base URL; both hosts serve
+# concurrently until RETIRE_LEGACY_GATEWAY_HOSTS=true removes these.
+#
+# Deliberately not part of kustomization.yaml: deploy.sh applies this file
+# while the legacy host is kept and deletes these Routes when it is retired.
+# The legacy host is under the cluster wildcard, so the router's default
+# certificate covers it and no externalCertificate is needed.
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: ai-gateway-legacy-messages
+  namespace: ${NAMESPACE}
+  labels:
+    app: praxis
+    pricetag.io/legacy-gateway-host: "true"
+  annotations:
+    haproxy.router.openshift.io/timeout: 300s
+spec:
+  host: ${LEGACY_GATEWAY_HOST}
+  path: /v1/messages
+  to: { kind: Service, name: praxis }
+  port: { targetPort: unified }
+  tls: { termination: edge, insecureEdgeTerminationPolicy: Redirect }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: ai-gateway-legacy-chat-completions
+  namespace: ${NAMESPACE}
+  labels:
+    app: praxis
+    pricetag.io/legacy-gateway-host: "true"
+  annotations:
+    haproxy.router.openshift.io/timeout: 300s
+spec:
+  host: ${LEGACY_GATEWAY_HOST}
+  path: /v1/chat/completions
+  to: { kind: Service, name: praxis }
+  port: { targetPort: openai }
+  tls: { termination: edge, insecureEdgeTerminationPolicy: Redirect }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: ai-gateway-legacy-responses
+  namespace: ${NAMESPACE}
+  labels:
+    app: praxis
+    pricetag.io/legacy-gateway-host: "true"
+  annotations:
+    haproxy.router.openshift.io/timeout: 300s
+spec:
+  host: ${LEGACY_GATEWAY_HOST}
+  path: /v1/responses
+  to: { kind: Service, name: praxis }
+  port: { targetPort: openai }
+  tls: { termination: edge, insecureEdgeTerminationPolicy: Redirect }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: ai-gateway-legacy-conversations
+  namespace: ${NAMESPACE}
+  labels:
+    app: praxis
+    pricetag.io/legacy-gateway-host: "true"
+  annotations:
+    haproxy.router.openshift.io/timeout: 300s
+spec:
+  host: ${LEGACY_GATEWAY_HOST}
+  path: /v1/conversations
+  to: { kind: Service, name: praxis }
+  port: { targetPort: openai }
+  tls: { termination: edge, insecureEdgeTerminationPolicy: Redirect }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: ai-gateway-legacy-models
+  namespace: ${NAMESPACE}
+  labels:
+    app: praxis
+    pricetag.io/legacy-gateway-host: "true"
+  annotations:
+    haproxy.router.openshift.io/timeout: 300s
+spec:
+  host: ${LEGACY_GATEWAY_HOST}
+  path: /v1/models
+  to: { kind: Service, name: praxis }
+  port: { targetPort: unified }
+  tls: { termination: edge, insecureEdgeTerminationPolicy: Redirect }
