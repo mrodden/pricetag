@@ -177,6 +177,19 @@ oc get storageclass "$STORAGE_CLASS" >/dev/null 2>&1 || \
 
 secret_exists() { oc -n "$NAMESPACE" get secret "$1" >/dev/null 2>&1; }
 config_exists() { oc -n "$NAMESPACE" get configmap "$1" >/dev/null 2>&1; }
+secret_has_key() {
+  [[ -n "$(oc -n "$NAMESPACE" get secret "$1" -o jsonpath="{.data['$2']}" 2>/dev/null)" ]]
+}
+partner_api_secret_complete() {
+  secret_exists metering-partner-api &&
+    secret_has_key metering-partner-api usage-report &&
+    secret_has_key metering-partner-api model-policy &&
+    secret_has_key metering-partner-api model-catalog
+}
+user_management_secret_complete() {
+  secret_exists metering-user-management-api &&
+    secret_has_key metering-user-management-api token
+}
 sha256_hex() {
   if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi | awk '{print $1}'
 }
@@ -322,17 +335,20 @@ fi
 # mode-0700 temporary directories and file inputs so secrets never appear in
 # command arguments, manifests, logs, or ConfigMaps.
 if [[ "$PROFILE" == enmaas ]] && \
-   (! secret_exists metering-partner-api || [[ "${ROTATE_METERING_PARTNER_API_SECRETS:-false}" == true ]]); then
+   (! partner_api_secret_complete || [[ "${ROTATE_METERING_PARTNER_API_SECRETS:-false}" == true ]]); then
   (
     umask 077
     secret_dir="$(mktemp -d)"
     trap 'rm -rf "$secret_dir"' EXIT
+    if secret_exists metering-partner-api && [[ "${ROTATE_METERING_PARTNER_API_SECRETS:-false}" != true ]]; then
+      oc -n "$NAMESPACE" extract secret/metering-partner-api --to="$secret_dir" --confirm >/dev/null
+    fi
     usage_report_secret="${USAGE_REPORT_API_SECRET:-$(openssl rand -hex 32)}"
     model_policy_secret="${MODEL_POLICY_API_SECRET:-$(openssl rand -hex 32)}"
     model_catalog_secret="${MODEL_CATALOG_API_SECRET:-$(openssl rand -hex 32)}"
-    printf '%s' "$usage_report_secret" >"$secret_dir/usage-report"
-    printf '%s' "$model_policy_secret" >"$secret_dir/model-policy"
-    printf '%s' "$model_catalog_secret" >"$secret_dir/model-catalog"
+    [[ -s "$secret_dir/usage-report" ]] || printf '%s' "$usage_report_secret" >"$secret_dir/usage-report"
+    [[ -s "$secret_dir/model-policy" ]] || printf '%s' "$model_policy_secret" >"$secret_dir/model-policy"
+    [[ -s "$secret_dir/model-catalog" ]] || printf '%s' "$model_catalog_secret" >"$secret_dir/model-catalog"
     unset usage_report_secret model_policy_secret model_catalog_secret
     oc -n "$NAMESPACE" create secret generic metering-partner-api \
       --from-file=usage-report="$secret_dir/usage-report" \
@@ -344,13 +360,16 @@ if [[ "$PROFILE" == enmaas ]] && \
 fi
 
 if [[ "$PROFILE" == enmaas ]] && \
-   (! secret_exists metering-user-management-api || [[ "${ROTATE_METERING_USER_MANAGEMENT_API_SECRET:-false}" == true ]]); then
+   (! user_management_secret_complete || [[ "${ROTATE_METERING_USER_MANAGEMENT_API_SECRET:-false}" == true ]]); then
   (
     umask 077
     secret_dir="$(mktemp -d)"
     trap 'rm -rf "$secret_dir"' EXIT
+    if secret_exists metering-user-management-api && [[ "${ROTATE_METERING_USER_MANAGEMENT_API_SECRET:-false}" != true ]]; then
+      oc -n "$NAMESPACE" extract secret/metering-user-management-api --to="$secret_dir" --confirm >/dev/null
+    fi
     user_management_secret="${USER_MANAGEMENT_API_SECRET:-$(openssl rand -hex 32)}"
-    printf '%s' "$user_management_secret" >"$secret_dir/token"
+    [[ -s "$secret_dir/token" ]] || printf '%s' "$user_management_secret" >"$secret_dir/token"
     unset user_management_secret
     oc -n "$NAMESPACE" create secret generic metering-user-management-api \
       --from-file=token="$secret_dir/token" \
