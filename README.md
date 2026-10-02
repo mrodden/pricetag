@@ -45,7 +45,14 @@ CNPG IAM role.
 ## Repository Layout
 
 - `deploy/openshift/`: deployment manifests and operational database assets.
+- `docs/architecture.md`: how the deployed system behaves — public surface,
+  request lifecycle, model/dialect pairings, data, TLS, network posture, and
+  the invariants to preserve. Start here before changing anything.
 - `docs/`: OpenShift deployment and database runbooks.
+- `docs/troubleshooting.md`: symptom-first diagnosis, including the common
+  `404`/`400`/empty-content client errors.
+- `docs/operations/functional-tests.md`: tiered tests against a deployed
+  environment (`tools/functional-test.sh`).
 - `docs/operations/image-provenance.md`: image source and release requirements.
 - `docs/design/`: forward-looking plans for Budget Tool integration, SSO,
   privacy/location claims, and organization-chart authorization.

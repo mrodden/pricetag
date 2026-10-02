@@ -20,7 +20,8 @@
 
 ```
                         ┌────────────────────────── Routes (edge TLS) ──────────────────────────┐
- All AI clients ───────►│ ai-gateway-<ns>.<appsDomain> (one host; path selects API dialect) │
+ All AI clients ───────►│ one inference host (path selects API dialect)                         │
+                        │   EnMaaS: api.enmaas.devshift.net │ dogfood/test: ai-gateway-<ns>.<appsDomain> │
  Browser  ─────────────►│ dashboard-… (PriceTag)                 status-… (static status page)   │
                         └───────┬────────────────────────────────────────────┬───────────────────┘
                                 ▼                                            ▼
@@ -47,7 +48,7 @@
 | **praxis** | The gateway. API-key auth, model allow/deny, routing, credential injection, metering, TLS pooling | [Praxis AI](https://github.com/praxis-proxy/ai) | Rust |
 | **maas-api** | MaaS key server — creates/validates `sk-…` API keys, backed by Postgres + MaaS CRDs | [models-as-a-service](https://github.com/opendatahub-io/models-as-a-service) (`maas-api/`) | Go |
 | **metering-service** | **PriceTag** — token-usage billing + admin dashboard. Login = paste your MaaS API key | [pricetag-metering](https://github.com/redhat-et/pricetag-metering) | Go |
-| **postgresql** | Shared DB for maas-api (keys) and metering-service (usage events) | `postgres:16-alpine` | — |
+| **postgresql** | Shared DB for maas-api (keys) and metering-service (usage events). dogfood/test run CloudNativePG in-cluster; **EnMaaS uses AWS RDS** (Multi-AZ, `rds.force_ssl`) — see [enmaas-rds-migration.md](operations/enmaas-rds-migration.md) | `postgres:16-alpine` (dogfood/test) | — |
 | **llm-katan** | Optional benchmark backend in the dogfood/test profiles; omitted from EnMaaS | llm-katan | Python |
 | **qwen-flash-proxy** | Optional: nginx TLS-terminating hop to an external vLLM route | `nginx:1-alpine` | — |
 
