@@ -43,7 +43,10 @@ echo "== render EnMaaS manifests =="
 if ! kubectl kustomize deploy/openshift/overlays/enmaas >"$TMP_DIR/enmaas-kustomized.yaml"; then
   fail "EnMaaS Kustomize build failed"
 else
-  if ! python3 deploy/openshift/render-enmaas-vertex.py \
+  # Pin the baseline render to the documented default so an operator's
+  # exported PRAXIS_PUBLIC_ADMIN=true (the live EnMaaS configuration) is
+  # not misreported as an insecure repo default.
+  if ! PRAXIS_PUBLIC_ADMIN=false python3 deploy/openshift/render-enmaas-vertex.py \
       "$TMP_DIR/enmaas-kustomized.yaml" \
       deploy/openshift/overlays/enmaas/vertex-fragments \
       >"$TMP_DIR/enmaas-vertex.yaml"; then
