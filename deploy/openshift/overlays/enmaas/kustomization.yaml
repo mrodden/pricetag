@@ -8,7 +8,7 @@ resources:
   - maas-api-rbac-binding.yaml
   - router-tls-rbac.yaml
   - tls-certificates.yaml
-  - rds-exporter.yaml
+  - nbari-pg-exporter.yaml
   - network-policy.yaml
   - dashboard-routes.yaml
   - ../../base
