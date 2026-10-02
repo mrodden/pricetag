@@ -42,6 +42,15 @@ spec:
           # pin stays valid if a node architecture ever changes).
           image: quay.io/prometheuscommunity/postgres-exporter@sha256:386b12d19eab2a37d7cd8ca8b4c7491cc7a830d9581f49af6c98a393da9605e6
           imagePullPolicy: IfNotPresent
+          # The least-privilege metering_reader role cannot inspect rdsadmin or
+          # execute pg_ls_waldir. These collectors therefore return no metrics
+          # and log a permission error every 30 seconds. Disable only those two
+          # rather than granting broad RDS monitoring privileges to an
+          # application-owned credential; all dashboard queries use the
+          # remaining collectors.
+          args:
+            - --no-collector.database
+            - --no-collector.wal
           env:
             - name: DATA_SOURCE_NAME
               valueFrom:
