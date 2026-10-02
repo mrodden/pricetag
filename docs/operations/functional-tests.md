@@ -73,8 +73,38 @@ Override them for an environment whose catalog differs:
 MODEL_OPENAI=gpt-5.6-luna ./tools/functional-test.sh --target dogfood --level inference
 ```
 
-Note that `gpt-5.3-codex` is Responses-only on this gateway and will fail a
-Chat Completions check.
+### Dialect and parameter compatibility
+
+A model is only callable on the dialect that routes it, using that dialect's
+parameter spelling. Getting this wrong produces errors that look like gateway
+faults but are client errors — the suite encodes the correct combinations:
+
+| Model | Endpoint | Token parameter | Wrong combination gives |
+|-------|----------|-----------------|-------------------------|
+| `claude-*` | `/v1/messages` only | `max_tokens` | `404` on `/v1/chat/completions` — the request falls through to the OpenAI upstream, which has no Claude model |
+| `gpt-5.x` | `/v1/chat/completions` | `max_completion_tokens` | `400 Unsupported parameter: 'max_tokens'` |
+| `rits/zai-org/glm-5-3` | either | `max_tokens` | — |
+| `gpt-5.3-codex` | Responses only | — | fails a Chat Completions check |
+
+### Reasoning models and the output cap
+
+`MAX_OUT` (default 64) must clear the reasoning budget. GLM 5.3 is a reasoning
+model: at `max_tokens: 16` the entire budget is spent on `reasoning_content`
+and the response comes back with `content: null` and
+`finish_reason: "length"` — a working call that looks like a failure.
+
+The success criterion is therefore "the model produced output and tokens were
+billed": non-empty `content` **or** `reasoning_content` (Anthropic: `text` or
+`thinking`), plus a non-zero completion/output token count.
+
+### Known failures
+
+Three checks fail against production today, all from one defect
+([#47](https://github.com/redhat-et/pricetag/issues/47)): the OpenAI-format
+catalog advertises Claude models that `404` on `/v1/chat/completions` while
+hiding the GPT and GLM models that work. The scheduled job runs `smoke`,
+which does not touch the catalog, so it stays green; `auth` and higher will
+show these three until the catalog filters are deduplicated.
 
 ## CI
 

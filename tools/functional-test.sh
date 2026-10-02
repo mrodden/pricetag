@@ -338,45 +338,95 @@ fi
 # INFERENCE — real model traffic (costs tokens)
 # ════════════════════════════════════════════════════════════════
 PROMPT="Reply with exactly one word: onboarded"
+# Output cap. Reasoning models spend this budget on reasoning before emitting
+# any content, so it has to clear that floor or every call finishes with
+# finish_reason=length and a null content.
+MAX_OUT="${MAX_OUT:-64}"
+
+# Each model is only callable on the dialect that routes it, with that
+# dialect's parameter spelling. Getting this wrong looks like a gateway fault
+# but is a client error:
+#   claude-*  Messages only. On chat/completions it falls through to the
+#             OpenAI upstream and comes back 404.
+#   gpt-5.x   chat/completions, and rejects max_tokens in favour of
+#             max_completion_tokens.
+#   GLM       either dialect, max_tokens.
+chat_payload() { # chat_payload <model> <token-param>
+  python3 -c '
+import json,sys
+m,param,prompt,cap = sys.argv[1],sys.argv[2],sys.argv[3],int(sys.argv[4])
+body={"model":m,"messages":[{"role":"user","content":prompt}]}
+body[param]=cap
+print(json.dumps(body))' "$1" "$2" "$PROMPT" "$MAX_OUT"
+}
+# A completion counts as working if the model produced any output at all.
+# Reasoning models legitimately return content=null with the whole budget in
+# reasoning_content, which still proves the request was routed and billed.
+OPENAI_OK='
+import json,sys
+b=json.load(open(sys.argv[1]))
+m=b["choices"][0]["message"]
+assert (m.get("content") or m.get("reasoning_content") or "").strip(), "no content"
+assert b["usage"]["completion_tokens"] > 0, "no tokens billed"
+'
+ANTHROPIC_OK='
+import json,sys
+b=json.load(open(sys.argv[1]))
+text="".join(p.get("text","") or p.get("thinking","") for p in b.get("content") or [])
+assert text.strip(), "no content"
+assert b["usage"]["output_tokens"] > 0, "no tokens billed"
+'
+
 if at_least inference; then
-  log "Inference: chat/completions (one free model, one per provider)"
+  log "Inference: OpenAI dialect (chat/completions)"
   if [[ -z "$KEY" ]]; then
     skip "inference (no key: set PRICETAG_KEY or KEY_FILE)"
   else
-    for m in "$MODEL_FREE" "$MODEL_ANTHROPIC" "$MODEL_OPENAI"; do
+    # free/hosted model, then the OpenAI provider with its own token spelling
+    for spec in "$MODEL_FREE:max_tokens" "$MODEL_OPENAI:max_completion_tokens"; do
+      m="${spec%:*}"; param="${spec##*:}"
       body="$WORK/chat.json"
-      payload="$(python3 -c '
-import json,sys
-print(json.dumps({"model":sys.argv[1],
-                  "messages":[{"role":"user","content":sys.argv[2]}],
-                  "max_tokens":16}))' "$m" "$PROMPT")"
       got="$(curl_json "$body" "$GATEWAY/v1/chat/completions" bearer \
-        -X POST -H 'content-type: application/json' --data "$payload")"
-      if [[ "$got" == 200 ]] && jcheck '
-import json,sys
-b=json.load(open(sys.argv[1]))
-assert b["choices"][0]["message"]["content"].strip()
-' "$body"; then pass "chat/completions $m"
-      else fail "chat/completions $m (http $got: $(head -c 120 "$body" 2>/dev/null | tr -d '\n'))"; fi
+        -X POST -H 'content-type: application/json' --data "$(chat_payload "$m" "$param")")"
+      if [[ "$got" == 200 ]] && jcheck "$OPENAI_OK" "$body"; then pass "chat/completions $m"
+      else fail "chat/completions $m (http $got: $(head -c 140 "$body" 2>/dev/null | tr -d '\n'))"; fi
     done
 
-    log "Inference: Anthropic Messages dialect"
-    # The Messages listener serves the Claude and hosted models.
+    log "Inference: Anthropic dialect (messages)"
     for m in "$MODEL_ANTHROPIC" "$MODEL_FREE"; do
       body="$WORK/messages.json"
       payload="$(python3 -c '
 import json,sys
-print(json.dumps({"model":sys.argv[1],"max_tokens":16,
-                  "messages":[{"role":"user","content":sys.argv[2]}]}))' "$m" "$PROMPT")"
+print(json.dumps({"model":sys.argv[1],"max_tokens":int(sys.argv[3]),
+                  "messages":[{"role":"user","content":sys.argv[2]}]}))' "$m" "$PROMPT" "$MAX_OUT")"
       got="$(curl_json "$body" "$GATEWAY/v1/messages" anthropic \
         -X POST -H 'content-type: application/json' --data "$payload")"
-      if [[ "$got" == 200 ]] && jcheck '
-import json,sys
-b=json.load(open(sys.argv[1]))
-assert b["content"][0]["text"].strip()
-' "$body"; then pass "messages $m"
-      else fail "messages $m (http $got: $(head -c 120 "$body" 2>/dev/null | tr -d '\n'))"; fi
+      if [[ "$got" == 200 ]] && jcheck "$ANTHROPIC_OK" "$body"; then pass "messages $m"
+      else fail "messages $m (http $got: $(head -c 140 "$body" 2>/dev/null | tr -d '\n'))"; fi
     done
+
+    log "Catalog coherence"
+    # Every model the OpenAI-format catalog advertises must be callable on the
+    # endpoint that dialect uses. Advertising a model that 404s sends every
+    # discovery-driven client into a dead end.
+    adv="$(python3 -c '
+import json,sys
+try:
+    b=json.load(open(sys.argv[1]))
+    print((b.get("data") or [{}])[0].get("id",""))
+except Exception:
+    print("")' "$WORK/models-openai.json" 2>/dev/null)"
+    if [[ -z "$adv" ]]; then skip "advertised model is callable (no catalog response)"
+    else
+      body="$WORK/adv.json"
+      got="$(curl_json "$body" "$GATEWAY/v1/chat/completions" bearer \
+        -X POST -H 'content-type: application/json' --data "$(chat_payload "$adv" max_tokens)")"
+      # 400 is acceptable here: it means the model is routed and merely wants
+      # different parameters. 404 means the catalog is advertising a dead model.
+      if [[ "$got" == 404 ]]; then
+        fail "advertised model '$adv' 404s on chat/completions — OpenAI catalog lists unusable models"
+      else pass "advertised model '$adv' is routable ($got)"; fi
+    fi
   fi
 fi
 
