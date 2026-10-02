@@ -76,7 +76,10 @@ done
 
 echo "== EnMaaS rendered Praxis configuration =="
 kubectl kustomize deploy/openshift/overlays/enmaas >"$TMP_DIR/enmaas-kustomized.yaml"
-python3 deploy/openshift/render-enmaas-vertex.py \
+# Pin the render to the documented default: operators export
+# PRAXIS_PUBLIC_ADMIN=true for the live deployment, and the "default render"
+# assertions below must not inherit that from the environment.
+PRAXIS_PUBLIC_ADMIN=false python3 deploy/openshift/render-enmaas-vertex.py \
   "$TMP_DIR/enmaas-kustomized.yaml" \
   deploy/openshift/overlays/enmaas/vertex-fragments \
   >"$TMP_DIR/enmaas-vertex.yaml"
