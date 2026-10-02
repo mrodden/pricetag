@@ -125,6 +125,16 @@ patches:
           rollingUpdate:
             maxUnavailable: 0
             maxSurge: 1
+      # Production sizing agreed with the MaaS API owner. Keep requests low
+      # for scheduling (observed steady-state usage is small), but leave enough
+      # headroom for key-validation bursts and Go heap growth without an OOM or
+      # CPU throttle. dogfood/test retain the smaller base limits.
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "1"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 2Gi
   - target:
       group: apps
       version: v1
