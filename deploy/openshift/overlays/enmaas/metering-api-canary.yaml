@@ -51,16 +51,36 @@ spec:
                 secretKeyRef:
                   name: metering-partner-api
                   key: usage-report
+            - name: USAGE_REPORT_API_SECRET_AIR
+              valueFrom:
+                secretKeyRef:
+                  name: metering-partner-api
+                  key: usage-report-air
+            - name: USAGE_REPORT_API_SECRET_AIBT
+              valueFrom:
+                secretKeyRef:
+                  name: metering-partner-api
+                  key: usage-report-aibt
             - name: MODEL_POLICY_API_SECRET
               valueFrom:
                 secretKeyRef:
                   name: metering-partner-api
                   key: model-policy
+            - name: MODEL_POLICY_API_SECRET_AIBT
+              valueFrom:
+                secretKeyRef:
+                  name: metering-partner-api
+                  key: model-policy-aibt
             - name: MODEL_CATALOG_API_SECRET
               valueFrom:
                 secretKeyRef:
                   name: metering-partner-api
                   key: model-catalog
+            - name: MODEL_CATALOG_API_SECRET_AIBT
+              valueFrom:
+                secretKeyRef:
+                  name: metering-partner-api
+                  key: model-catalog-aibt
             # PARTNER_USER_KEY_GROUP is intentionally absent: canary runs keep
             # key operations at 503 unless set explicitly for a test.
           resources:

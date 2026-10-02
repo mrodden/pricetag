@@ -193,6 +193,22 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value:
+          name: USAGE_REPORT_API_SECRET_AIR
+          valueFrom:
+            secretKeyRef:
+              name: metering-partner-api
+              key: usage-report-air
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: USAGE_REPORT_API_SECRET_AIBT
+          valueFrom:
+            secretKeyRef:
+              name: metering-partner-api
+              key: usage-report-aibt
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
           name: MODEL_POLICY_API_SECRET
           valueFrom:
             secretKeyRef:
@@ -201,11 +217,27 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value:
+          name: MODEL_POLICY_API_SECRET_AIBT
+          valueFrom:
+            secretKeyRef:
+              name: metering-partner-api
+              key: model-policy-aibt
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
           name: MODEL_CATALOG_API_SECRET
           valueFrom:
             secretKeyRef:
               name: metering-partner-api
               key: model-catalog
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: MODEL_CATALOG_API_SECRET_AIBT
+          valueFrom:
+            secretKeyRef:
+              name: metering-partner-api
+              key: model-catalog-aibt
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value:
