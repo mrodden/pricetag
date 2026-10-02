@@ -1,0 +1,83 @@
+name: Functional tests
+
+# Runs tools/functional-test.sh against a deployed EnMaaS environment.
+#
+# Scheduled runs probe production at the "smoke" level: unauthenticated,
+# read-only, no model traffic, so they are safe to run unattended and cost
+# nothing. Higher levels are manual (workflow_dispatch) because they need a
+# credential and, from "inference" up, spend tokens.
+#
+# Credentials are optional. The suite SKIPs any check whose credential is
+# absent rather than failing, so this workflow is useful with no secrets
+# configured at all. To enable the authenticated levels, add:
+#   PRICETAG_KEY   a MaaS API key scoped for testing
+#   PARTNER_TOKEN  a partner API bearer token
+# CI has no cluster access, so the kubeconfig-dependent checks always SKIP.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Environment to test
+        type: choice
+        options: [enmaas, dogfood, test]
+        default: enmaas
+      level:
+        description: Test depth (inference and full spend tokens)
+        type: choice
+        options: [smoke, auth, inference, full]
+        default: smoke
+      confirm_prod:
+        description: Required to send model traffic to production
+        type: boolean
+        default: false
+      gateway_host:
+        description: Override gateway host (for environments not listed above)
+        type: string
+        default: ""
+      dashboard_host:
+        description: Override dashboard host
+        type: string
+        default: ""
+  schedule:
+    # Production smoke checks through the day, so an expired certificate,
+    # a dropped Route claim or a broken auth wall surfaces within hours
+    # rather than at the next deploy.
+    - cron: "0 2,8,14,20 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: functional-tests-${{ github.event.inputs.target || 'enmaas' }}
+  cancel-in-progress: false
+
+jobs:
+  functional:
+    name: Functional (${{ github.event.inputs.level || 'smoke' }} / ${{ github.event.inputs.target || 'enmaas' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Run functional tests
+        shell: bash
+        env:
+          # Absent secrets are fine: the affected checks SKIP.
+          PRICETAG_KEY: ${{ secrets.PRICETAG_KEY }}
+          PARTNER_TOKEN: ${{ secrets.PARTNER_TOKEN }}
+          GATEWAY_HOST: ${{ github.event.inputs.gateway_host }}
+          DASHBOARD_HOST: ${{ github.event.inputs.dashboard_host }}
+          KEY_FILE: /nonexistent
+        run: |
+          set -euo pipefail
+          target="${{ github.event.inputs.target || 'enmaas' }}"
+          level="${{ github.event.inputs.level || 'smoke' }}"
+          args=(--target "$target" --level "$level")
+          if [[ "${{ github.event.inputs.confirm_prod }}" == "true" ]]; then
+            args+=(--confirm-prod)
+          fi
+          ./tools/functional-test.sh "${args[@]}"
