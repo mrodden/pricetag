@@ -451,25 +451,55 @@ if [[ "$PROFILE" == enmaas ]]; then
   fi
 fi
 # The vendored CNPG CRDs exceed the client-side apply annotation limit.
-# Server-side apply keeps the schema in managed fields instead.
-oc apply --server-side --force-conflicts \
-  --field-manager=pricetag-deploy \
-  -f "$SCRIPT_DIR/database/cnpg/cnpg-operator-1.30.0.yaml"
-oc -n cnpg-system rollout status deploy/cnpg-controller-manager --timeout=300s
+# Server-side apply keeps the schema in managed fields instead. Keep the
+# operator while an old cluster exists: RDS mode hibernates that cluster but
+# deliberately retains its PVCs as a rollback option.
+if [[ "$DATABASE_BACKEND" == cnpg ]] || \
+   oc -n "$NAMESPACE" get clusters.postgresql.cnpg.io/aigateway-pg >/dev/null 2>&1; then
+  oc apply --server-side --force-conflicts \
+    --field-manager=pricetag-deploy \
+    -f "$SCRIPT_DIR/database/cnpg/cnpg-operator-1.30.0.yaml"
+  oc -n cnpg-system rollout status deploy/cnpg-controller-manager --timeout=300s
+fi
 
 export NAMESPACE STORAGE_CLASS COS_BUCKET COS_ENDPOINT COS_REGION RDS_EGRESS_CIDR
-CNPG_CLUSTER_MANIFEST="$SCRIPT_DIR/database/cnpg/10-cluster.yaml"
-CNPG_ENV_VARS="\${NAMESPACE} \${STORAGE_CLASS} \${COS_BUCKET} \${COS_ENDPOINT} \${COS_REGION}"
-if [[ "$PROFILE" == enmaas ]]; then
-  export AWS_ROLE_ARN
-  CNPG_CLUSTER_MANIFEST="$SCRIPT_DIR/database/cnpg/10-cluster-enmaas.yaml"
-  CNPG_ENV_VARS="\${NAMESPACE} \${STORAGE_CLASS} \${COS_BUCKET} \${COS_ENDPOINT} \${COS_REGION} \${AWS_ROLE_ARN}"
+if [[ "$DATABASE_BACKEND" == cnpg ]]; then
+  CNPG_CLUSTER_MANIFEST="$SCRIPT_DIR/database/cnpg/10-cluster.yaml"
+  CNPG_ENV_VARS="\${NAMESPACE} \${STORAGE_CLASS} \${COS_BUCKET} \${COS_ENDPOINT} \${COS_REGION}"
+  if [[ "$PROFILE" == enmaas ]]; then
+    export AWS_ROLE_ARN
+    CNPG_CLUSTER_MANIFEST="$SCRIPT_DIR/database/cnpg/10-cluster-enmaas.yaml"
+    CNPG_ENV_VARS="\${NAMESPACE} \${STORAGE_CLASS} \${COS_BUCKET} \${COS_ENDPOINT} \${COS_REGION} \${AWS_ROLE_ARN}"
+  fi
+  envsubst "$CNPG_ENV_VARS" < "$CNPG_CLUSTER_MANIFEST" | oc apply -f -
+  envsubst "\${NAMESPACE}" \
+    < "$SCRIPT_DIR/database/cnpg/20-scheduled-backup.yaml" | oc apply -f -
+  oc -n "$NAMESPACE" wait clusters.postgresql.cnpg.io/aigateway-pg \
+    --for=condition=Ready --timeout=10m
+else
+  # Production uses RDS. Preserve a migrated CNPG cluster as a cold rollback
+  # copy, but do not spend resources or keep archiving a database no workload
+  # uses. Declarative hibernation removes all database Pods while retaining
+  # every PVC; setting the annotation to "off" rehydrates it.
+  if oc -n "$NAMESPACE" get scheduledbackups.postgresql.cnpg.io/aigateway-daily >/dev/null 2>&1; then
+    oc -n "$NAMESPACE" patch scheduledbackups.postgresql.cnpg.io/aigateway-daily \
+      --type=merge -p '{"spec":{"suspend":true}}' >/dev/null
+    echo "Suspended legacy CNPG ScheduledBackup aigateway-daily"
+  fi
+  if oc -n "$NAMESPACE" get clusters.postgresql.cnpg.io/aigateway-pg >/dev/null 2>&1; then
+    oc -n "$NAMESPACE" annotate clusters.postgresql.cnpg.io/aigateway-pg \
+      --overwrite cnpg.io/hibernation=on >/dev/null
+    for _ in $(seq 1 60); do
+      [[ "$(oc -n "$NAMESPACE" get clusters.postgresql.cnpg.io/aigateway-pg \
+        -o jsonpath='{.status.conditions[?(@.type=="cnpg.io/hibernation")].status}' 2>/dev/null || true)" == True ]] && break
+      sleep 5
+    done
+    [[ "$(oc -n "$NAMESPACE" get clusters.postgresql.cnpg.io/aigateway-pg \
+      -o jsonpath='{.status.conditions[?(@.type=="cnpg.io/hibernation")].status}' 2>/dev/null || true)" == True ]] || \
+      die "legacy CNPG cluster did not hibernate"
+    echo "Legacy CNPG cluster hibernated; PVCs retained for rollback"
+  fi
 fi
-envsubst "$CNPG_ENV_VARS" < "$CNPG_CLUSTER_MANIFEST" | oc apply -f -
-envsubst "\${NAMESPACE}" \
-  < "$SCRIPT_DIR/database/cnpg/20-scheduled-backup.yaml" | oc apply -f -
-oc -n "$NAMESPACE" wait clusters.postgresql.cnpg.io/aigateway-pg \
-  --for=condition=Ready --timeout=10m
 
 if [[ "$PROFILE" == enmaas ]]; then
   if [[ "$DATABASE_BACKEND" == rds ]]; then

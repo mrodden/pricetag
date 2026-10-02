@@ -37,8 +37,11 @@ database from CloudNativePG to AWS RDS. It is not a production runbook.
 10. Run API-key validation, entitlement, GLM, Anthropic/Vertex, OpenAI, and
     dashboard smoke tests. Confirm a new usage event lands in RDS.
 11. Keep CNPG and rollback material available through an observation window.
-12. Only after backup/restore, idempotency, performance, and rollback gates
-    pass may CNPG be decommissioned.
+12. After the observation window, hibernate CNPG rather than deleting it. This
+    removes its Pods while retaining all PVCs as a cold rollback copy, and
+    suspends its ScheduledBackup so a stale database is not archived forever.
+13. Only after backup/restore, idempotency, performance, and rollback gates
+    pass may CNPG and its PVCs be deleted permanently.
 
 ## Post-cutover key reconciliation — 2026-09-29
 
@@ -59,10 +62,24 @@ hashes and associated metadata were migrated.
 
 ## Rollback
 
-Stop application writers, restore the pre-RDS connection Secret values,
+RDS mode declaratively hibernates the legacy cluster with
+`cnpg.io/hibernation: "on"`. CloudNativePG removes all database Pods but
+retains the primary and replica PVCs. It also suspends `aigateway-daily`.
+
+To make the rollback source available again:
+
+```bash
+oc -n enmaas annotate cluster/aigateway-pg --overwrite cnpg.io/hibernation=off
+oc -n enmaas wait cluster/aigateway-pg --for=condition=Ready --timeout=10m
+```
+
+Do not resume the legacy backup schedule: the object-store archive belongs to
+the pre-cutover timeline and RDS is the backup authority after cutover.
+
+Then stop application writers, restore the pre-RDS connection Secret values,
 restart MaaS API and metering, restore Praxis if needed, and verify that new
-connections return to CNPG. Do not delete CNPG or its storage as part of the
-initial migration.
+connections return to CNPG. Do not delete CNPG or its storage until rollback
+has been explicitly retired.
 
 ## Required gates before decommissioning CNPG
 

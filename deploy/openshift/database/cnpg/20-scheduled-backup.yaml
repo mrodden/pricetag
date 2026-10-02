@@ -9,7 +9,9 @@ metadata:
   name: aigateway-daily
   namespace: ${NAMESPACE}
 spec:
-  schedule: "15 2 * * *"
+  # CNPG uses the six-field cron format (seconds first). The old five-field
+  # value "15 2 * * *" was interpreted as second 15, minute 2, every hour.
+  schedule: "0 15 2 * * *"
   immediate: false
   suspend: false
   cluster:
