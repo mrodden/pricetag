@@ -32,6 +32,7 @@ import json
 import math
 import os
 from pathlib import Path
+import random
 import ssl
 import statistics
 import sys
@@ -183,7 +184,7 @@ def request_body(mode: str, model: str, run_id: str, sequence: str) -> bytes | N
 def fire_request(
     record: UserKey,
     *,
-    barrier: threading.Barrier,
+    barrier: threading.Barrier | None,
     batch_started: float,
     base_url: str,
     mode: str,
@@ -191,21 +192,22 @@ def fire_request(
     run_id: str,
     timeout: float,
 ) -> RequestResult:
-    try:
-        barrier.wait(timeout=30)
-    except threading.BrokenBarrierError:
-        return RequestResult(
-            record.sequence,
-            record.user_id,
-            record.fingerprint,
-            0,
-            False,
-            0,
-            None,
-            0,
-            0,
-            "start barrier failed",
-        )
+    if barrier is not None:
+        try:
+            barrier.wait(timeout=30)
+        except threading.BrokenBarrierError:
+            return RequestResult(
+                record.sequence,
+                record.user_id,
+                record.fingerprint,
+                0,
+                False,
+                0,
+                None,
+                0,
+                0,
+                "start barrier failed",
+            )
 
     started = time.monotonic()
     body = request_body(mode, model, run_id, record.sequence)
@@ -301,6 +303,73 @@ def run_batch(
     return sorted(results, key=lambda result: result.sequence)
 
 
+def sustained_schedule(
+    *, duration: float, interval: float, jitter: float, seed: str
+) -> list[float]:
+    """Return deterministic request offsets for one user.
+
+    Initial phases are spread over one interval. Subsequent intervals vary by
+    the requested jitter, preventing artificial synchronized cache/provider
+    waves while remaining reproducible for a run id and sequence.
+    """
+    rng = random.Random(seed)
+    offset = rng.uniform(0, min(interval, duration))
+    offsets = []
+    while offset < duration:
+        offsets.append(offset)
+        factor = rng.uniform(1 - jitter, 1 + jitter)
+        offset += interval * factor
+    return offsets
+
+
+def run_sustained(
+    records: list[UserKey],
+    *,
+    base_url: str,
+    mode: str,
+    model: str,
+    run_id: str,
+    timeout: float,
+    duration: float,
+    interval: float,
+    jitter: float,
+) -> list[RequestResult]:
+    started = time.monotonic()
+
+    def one_user(record: UserKey) -> list[RequestResult]:
+        results = []
+        offsets = sustained_schedule(
+            duration=duration,
+            interval=interval,
+            jitter=jitter,
+            seed=f"{run_id}:{record.sequence}",
+        )
+        for offset in offsets:
+            delay = started + offset - time.monotonic()
+            if delay > 0:
+                time.sleep(delay)
+            results.append(
+                fire_request(
+                    record,
+                    barrier=None,
+                    batch_started=started,
+                    base_url=base_url,
+                    mode=mode,
+                    model=model,
+                    run_id=run_id,
+                    timeout=timeout,
+                )
+            )
+        return results
+
+    results: list[RequestResult] = []
+    with ThreadPoolExecutor(max_workers=len(records), thread_name_prefix="enmaas-user") as pool:
+        futures = [pool.submit(one_user, record) for record in records]
+        for future in as_completed(futures):
+            results.extend(future.result())
+    return sorted(results, key=lambda result: (result.started_offset_ms, result.sequence))
+
+
 def summarize(results: list[RequestResult]) -> dict[str, float | int]:
     latencies = [result.total_ms for result in results]
     starts = [result.started_offset_ms for result in results]
@@ -335,6 +404,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--rounds", type=int, default=1)
     parser.add_argument("--round-delay", type=float, default=0)
     parser.add_argument("--cooldown", type=float, default=10, help="seconds between ramp levels")
+    parser.add_argument("--duration-minutes", type=float, default=0, help="jittered sustained mode")
+    parser.add_argument("--per-user-interval", type=float, default=60, help="seconds in sustained mode")
+    parser.add_argument("--jitter", type=float, default=0.20, help="interval fraction, 0..1")
     parser.add_argument("--timeout", type=float, default=0, help="request timeout; mode default when 0")
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--run-id", default="")
@@ -361,6 +433,12 @@ def main() -> int:
             )
         if args.rounds < 1:
             raise ConfigurationError("--rounds must be positive")
+        if args.duration_minutes < 0 or args.per_user_interval <= 0:
+            raise ConfigurationError("duration must not be negative and interval must be positive")
+        if not 0 <= args.jitter <= 1:
+            raise ConfigurationError("--jitter must be between 0 and 1")
+        if args.duration_minutes and (args.ramp or args.rounds != 1):
+            raise ConfigurationError("sustained mode cannot be combined with --ramp or --rounds")
         if args.cooldown < 0 or args.round_delay < 0:
             raise ConfigurationError("delays must not be negative")
         if args.timeout < 0 or args.max_p95 < 0 or args.max_p99 < 0:
@@ -396,7 +474,66 @@ def main() -> int:
 
     runs = []
     failed_gate = False
-    for level_index, level in enumerate(ramp):
+    if args.duration_minutes:
+        selected = records[: ramp[0]]
+        duration = args.duration_minutes * 60
+        print(
+            f"\nrunning {len(selected)} users for {args.duration_minutes:g} minutes; "
+            f"interval={args.per_user_interval:g}s jitter={args.jitter:.0%}"
+        )
+        wall_started = time.monotonic()
+        results = run_sustained(
+            selected,
+            base_url=args.base_url,
+            mode=args.mode,
+            model=args.model,
+            run_id=run_id,
+            timeout=timeout,
+            duration=duration,
+            interval=args.per_user_interval,
+            jitter=args.jitter,
+        )
+        elapsed = time.monotonic() - wall_started
+        summary = summarize(results)
+        summary["elapsed_seconds"] = elapsed
+        summary["requests_per_second"] = len(results) / elapsed if elapsed else 0
+        error_rate = summary["failed"] / summary["requests"]
+        gate_errors = []
+        if error_rate > args.max_error_rate:
+            gate_errors.append(f"error rate {error_rate:.2%} > {args.max_error_rate:.2%}")
+        if summary["p95_ms"] > max_p95:
+            gate_errors.append(f"p95 {summary['p95_ms']:.0f}ms > {max_p95:.0f}ms")
+        if summary["p99_ms"] > max_p99:
+            gate_errors.append(f"p99 {summary['p99_ms']:.0f}ms > {max_p99:.0f}ms")
+        summary["error_rate"] = error_rate
+        summary["gate_errors"] = gate_errors
+        print(
+            "requests={requests} success={success} failed={failed} rate={requests_per_second:.2f}/s "
+            "p50={p50_ms:.0f}ms p95={p95_ms:.0f}ms p99={p99_ms:.0f}ms max={max_ms:.0f}ms".format(
+                **summary
+            )
+        )
+        for result in results:
+            if not result.success:
+                print(
+                    f"  FAIL sequence={result.sequence} fingerprint={result.key_fingerprint} "
+                    f"status={result.status} error={result.error or '-'}"
+                )
+        failed_gate = bool(gate_errors)
+        if failed_gate:
+            print("GATE FAILED: " + "; ".join(gate_errors))
+        runs.append(
+            {
+                "concurrency": len(selected),
+                "duration_seconds": duration,
+                "per_user_interval_seconds": args.per_user_interval,
+                "jitter": args.jitter,
+                "summary": summary,
+                "results": [asdict(result) for result in results],
+            }
+        )
+
+    for level_index, level in enumerate(ramp if not args.duration_minutes else []):
         for round_number in range(1, args.rounds + 1):
             batch_id = f"{run_id}-c{level}-r{round_number}"
             print(f"\nlaunching {level} simultaneous users ({batch_id})")

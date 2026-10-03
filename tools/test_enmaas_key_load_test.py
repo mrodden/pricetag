@@ -78,6 +78,16 @@ class HarnessTest(unittest.TestCase):
         self.assertEqual(64, gpt["max_completion_tokens"])
         self.assertNotIn("max_tokens", gpt)
 
+    def test_sustained_schedule_is_reproducible_and_bounded(self):
+        first = MODULE.sustained_schedule(duration=900, interval=60, jitter=0.2, seed="run:001")
+        second = MODULE.sustained_schedule(duration=900, interval=60, jitter=0.2, seed="run:001")
+        self.assertEqual(first, second)
+        self.assertTrue(first)
+        self.assertGreaterEqual(first[0], 0)
+        self.assertLess(first[-1], 900)
+        gaps = [b - a for a, b in zip(first, first[1:])]
+        self.assertTrue(all(48 <= gap <= 72 for gap in gaps))
+
     def test_run_batch_sends_distinct_keys_behind_barrier(self):
         seen = []
         seen_lock = threading.Lock()

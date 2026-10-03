@@ -77,6 +77,30 @@ Before a production inference run, confirm the dollar cap, provider capacity,
 test window, monitoring coverage and stop owner. Reconcile one metering event
 per successful request using the CSV UUID mapping and the unique batch IDs.
 
+## Realistic sustained traffic
+
+Synchronized bursts answer a worst-case capacity question but do not resemble
+normal interactive use. Sustained mode assigns each user a deterministic random
+phase, then sends one request per interval with jitter:
+
+```bash
+./tools/enmaas-key-load-test.py \
+  --keys "$HOME/Downloads/Pertest-users.csv" \
+  --base-url https://api.enmaas.devshift.net \
+  --mode inference \
+  --model gpt-5.4 \
+  --concurrency 200 \
+  --duration-minutes 15 \
+  --per-user-interval 60 \
+  --jitter 0.20 \
+  --confirm-prod \
+  --confirm-provider-traffic
+```
+
+That produces roughly 3,000 requests over 15 minutes (about 3.3 requests per
+second) while preventing artificial once-per-minute request waves. Run the same
+shape per provider for a comparable latency and metering baseline.
+
 ## Observe and stop
 
 Watch the EnMaaS Overview, Performance/SRE and RDS dashboards. Stop for any
