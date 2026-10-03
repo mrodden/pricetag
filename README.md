@@ -12,9 +12,10 @@ This repository is the deployment and operations home for the platform.
 
 ## Deploy
 
-Start with the [full OpenShift deployment guide](docs/openshift-deploy-guide.md).
-It covers namespace setup, secrets, CloudNativePG, MaaS API integration, gateway
-deployment, routes, smoke tests, backups, and recovery.
+Start with the [new-cluster deployment how-to](docs/operations/new-cluster-deployment.md).
+It is the guarded operator checklist from target selection through acceptance
+and teardown. Use the [full OpenShift deployment guide](docs/openshift-deploy-guide.md)
+for manifest details, manual installation commands, backups, and recovery.
 
 The deploy script is deliberately guarded. It requires a dedicated
 `PRICETAG_KUBECONFIG`, an `EXPECTED_OC_SERVER`, the separately configured
@@ -53,6 +54,8 @@ CNPG IAM role.
   `404`/`400`/empty-content client errors.
 - `docs/operations/functional-tests.md`: tiered tests against a deployed
   environment (`tools/functional-test.sh`).
+- `docs/operations/new-cluster-deployment.md`: guarded end-to-end checklist for
+  bootstrapping and accepting a new OpenShift environment.
 - `docs/operations/image-provenance.md`: image source and release requirements.
 - `docs/design/`: forward-looking plans for Budget Tool integration, SSO,
   privacy/location claims, and organization-chart authorization.
