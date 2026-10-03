@@ -56,6 +56,8 @@ CNPG IAM role.
   environment (`tools/functional-test.sh`).
 - `docs/operations/new-cluster-deployment.md`: guarded end-to-end checklist for
   bootstrapping and accepting a new OpenShift environment.
+- `docs/operations/key-concurrency-test.md`: secure 200-key auth/inference
+  concurrency ramp and metering-reconciliation procedure.>>>>>>> ade4bf2 (feat(tools): add secure 200-key concurrency harness)
 - `docs/operations/image-provenance.md`: image source and release requirements.
 - `docs/design/`: forward-looking plans for Budget Tool integration, SSO,
   privacy/location claims, and organization-chart authorization.
