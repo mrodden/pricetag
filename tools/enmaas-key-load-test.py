@@ -163,19 +163,21 @@ def percentile(values: list[float], quantile: float) -> float:
 def request_body(mode: str, model: str, run_id: str, sequence: str) -> bytes | None:
     if mode == "auth":
         return None
-    return json.dumps(
-        {
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": f"Reply with exactly: loadtest-{run_id}-{sequence}",
-                }
-            ],
-            # Reasoning models can spend a small budget entirely on thinking.
-            "max_tokens": 64,
-        }
-    ).encode()
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": f"Reply with exactly: loadtest-{run_id}-{sequence}",
+            }
+        ],
+    }
+    # OpenAI's gpt-5 family rejects max_tokens. Hosted/Anthropic-compatible
+    # models use the older spelling. Keep the cap identical so provider
+    # comparisons have the same bounded output budget.
+    token_parameter = "max_completion_tokens" if model.startswith("gpt-5") else "max_tokens"
+    payload[token_parameter] = 64
+    return json.dumps(payload).encode()
 
 
 def fire_request(

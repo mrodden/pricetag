@@ -2,6 +2,7 @@
 import csv
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -65,6 +66,17 @@ class HarnessTest(unittest.TestCase):
 
     def test_percentile_uses_nearest_rank(self):
         self.assertEqual(4, MODULE.percentile([1, 2, 3, 4], 0.95))
+
+    def test_request_body_uses_provider_specific_token_parameter(self):
+        glm = json.loads(
+            MODULE.request_body("inference", "rits/zai-org/glm-5-3", "run", "001")
+        )
+        self.assertEqual(64, glm["max_tokens"])
+        self.assertNotIn("max_completion_tokens", glm)
+
+        gpt = json.loads(MODULE.request_body("inference", "gpt-5.4", "run", "001"))
+        self.assertEqual(64, gpt["max_completion_tokens"])
+        self.assertNotIn("max_tokens", gpt)
 
     def test_run_batch_sends_distinct_keys_behind_barrier(self):
         seen = []
