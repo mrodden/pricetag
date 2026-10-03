@@ -226,8 +226,12 @@ secret_has_key() {
 partner_api_secret_complete() {
   secret_exists metering-partner-api &&
     secret_has_key metering-partner-api usage-report &&
+    secret_has_key metering-partner-api usage-report-air &&
+    secret_has_key metering-partner-api usage-report-aibt &&
     secret_has_key metering-partner-api model-policy &&
-    secret_has_key metering-partner-api model-catalog
+    secret_has_key metering-partner-api model-policy-aibt &&
+    secret_has_key metering-partner-api model-catalog &&
+    secret_has_key metering-partner-api model-catalog-aibt
 }
 user_management_secret_complete() {
   secret_exists metering-user-management-api &&
@@ -387,16 +391,28 @@ if [[ "$PROFILE" == enmaas ]] && \
       oc -n "$NAMESPACE" extract secret/metering-partner-api --to="$secret_dir" --confirm >/dev/null
     fi
     usage_report_secret="${USAGE_REPORT_API_SECRET:-$(openssl rand -hex 32)}"
+    usage_report_air_secret="${USAGE_REPORT_API_SECRET_AIR:-$(openssl rand -hex 32)}"
+    usage_report_aibt_secret="${USAGE_REPORT_API_SECRET_AIBT:-$(openssl rand -hex 32)}"
     model_policy_secret="${MODEL_POLICY_API_SECRET:-$(openssl rand -hex 32)}"
+    model_policy_aibt_secret="${MODEL_POLICY_API_SECRET_AIBT:-$(openssl rand -hex 32)}"
     model_catalog_secret="${MODEL_CATALOG_API_SECRET:-$(openssl rand -hex 32)}"
+    model_catalog_aibt_secret="${MODEL_CATALOG_API_SECRET_AIBT:-$(openssl rand -hex 32)}"
     [[ -s "$secret_dir/usage-report" ]] || printf '%s' "$usage_report_secret" >"$secret_dir/usage-report"
+    [[ -s "$secret_dir/usage-report-air" ]] || printf '%s' "$usage_report_air_secret" >"$secret_dir/usage-report-air"
+    [[ -s "$secret_dir/usage-report-aibt" ]] || printf '%s' "$usage_report_aibt_secret" >"$secret_dir/usage-report-aibt"
     [[ -s "$secret_dir/model-policy" ]] || printf '%s' "$model_policy_secret" >"$secret_dir/model-policy"
+    [[ -s "$secret_dir/model-policy-aibt" ]] || printf '%s' "$model_policy_aibt_secret" >"$secret_dir/model-policy-aibt"
     [[ -s "$secret_dir/model-catalog" ]] || printf '%s' "$model_catalog_secret" >"$secret_dir/model-catalog"
-    unset usage_report_secret model_policy_secret model_catalog_secret
+    [[ -s "$secret_dir/model-catalog-aibt" ]] || printf '%s' "$model_catalog_aibt_secret" >"$secret_dir/model-catalog-aibt"
+    unset usage_report_secret usage_report_air_secret usage_report_aibt_secret model_policy_secret model_policy_aibt_secret model_catalog_secret model_catalog_aibt_secret
     oc -n "$NAMESPACE" create secret generic metering-partner-api \
       --from-file=usage-report="$secret_dir/usage-report" \
+      --from-file=usage-report-air="$secret_dir/usage-report-air" \
+      --from-file=usage-report-aibt="$secret_dir/usage-report-aibt" \
       --from-file=model-policy="$secret_dir/model-policy" \
+      --from-file=model-policy-aibt="$secret_dir/model-policy-aibt" \
       --from-file=model-catalog="$secret_dir/model-catalog" \
+      --from-file=model-catalog-aibt="$secret_dir/model-catalog-aibt" \
       --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
   )
   METERING_PARTNER_API_CHANGED=true
