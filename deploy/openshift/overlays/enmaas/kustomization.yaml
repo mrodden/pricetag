@@ -112,6 +112,17 @@ patches:
                 ports:
                   - containerPort: 8082
                     $patch: delete
+                # Sizing for failover (per-pod 50% = 1Gi / 1 core; one pod
+                # absorbs the other's load at 100% = 2Gi / 2 cores).
+                # Grounded in the 2026-10-04 body-buffer load test: 256Mi
+                # OOM-killed at 16MiB x 200 concurrent in-flight bodies.
+                resources:
+                  limits:
+                    cpu: "2"
+                    memory: 2Gi
+                  requests:
+                    cpu: 500m
+                    memory: 512Mi
   - target:
       group: apps
       version: v1
