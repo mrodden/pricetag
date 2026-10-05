@@ -153,6 +153,9 @@ patches:
       name: praxis
     patch: |-
       - op: add
+        path: /spec/replicas
+        value: 4
+      - op: add
         path: /spec/strategy
         value:
           type: RollingUpdate
@@ -202,7 +205,7 @@ patches:
     patch: |-
       - op: replace
         path: /spec/replicas
-        value: 2
+        value: 4
       # The global model catalog reads the allowlisted praxis-config through
       # the in-cluster Kubernetes API. The matching Role is restricted to that
       # ConfigMap (and the existing MaaS subscription read), so this token does
