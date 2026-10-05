@@ -212,7 +212,7 @@ for deployment in maas-api metering-service praxis; do
   yq -e "select(.kind == \"Deployment\" and .metadata.name == \"$deployment\") | select(.spec.strategy.type == \"RollingUpdate\" and .spec.strategy.rollingUpdate.maxUnavailable == 0 and .spec.strategy.rollingUpdate.maxSurge == 1)" \
     "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
 done
-for expected in 'maas-api=1' 'metering-service=4' 'praxis=4'; do
+for expected in 'maas-api=2' 'metering-service=4' 'praxis=4'; do
   deployment="${expected%%=*}"
   replicas="${expected#*=}"
   yq -e "select(.kind == \"Deployment\" and .metadata.name == \"$deployment\") | select(.spec.replicas == $replicas)" \

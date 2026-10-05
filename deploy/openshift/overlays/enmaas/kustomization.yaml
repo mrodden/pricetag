@@ -129,6 +129,9 @@ patches:
       kind: Deployment
       name: maas-api
     patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
       - op: add
         path: /spec/strategy
         value:
