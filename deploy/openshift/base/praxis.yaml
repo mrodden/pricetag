@@ -444,6 +444,12 @@ spec:
       containers:
         - name: praxis
           image: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai:latest
+          # Raise the soft nofile rlimit from the 1024 pod default: at high
+          # concurrency (700 users) each in-flight stream holds ~2-3 fds
+          # (client + upstream + subrequests), and 1024 caused
+          # 'SocketError: No file descriptors available (os error 24)' ->
+          # 502. 65536 <= the 524288 hard limit, so this succeeds non-root.
+          command: ["/bin/sh", "-c", "ulimit -n 65536 && exec /usr/local/bin/praxis-ai -c /etc/praxis/praxis.yaml"]
           args: ["-c", "/etc/praxis/praxis.yaml"]
           securityContext:
             allowPrivilegeEscalation: false

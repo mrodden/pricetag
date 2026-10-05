@@ -112,6 +112,19 @@ patches:
                 ports:
                   - containerPort: 8082
                     $patch: delete
+                # Sizing for failover + Guaranteed QoS (request = limit):
+                # per-pod 4Gi / 2 CPU reserved and non-evictable; one pod
+                # absorbs the other's load at 4Gi / 2 CPU. Grounded in the
+                # 2026-10-04 body-buffer load test: 256Mi OOM-killed at
+                # 16MiB x 200 concurrent in-flight bodies; 8k users peaked
+                # ~1.14Gi.
+                resources:
+                  limits:
+                    cpu: "2"
+                    memory: 4Gi
+                  requests:
+                    cpu: "2"
+                    memory: 4Gi
   - target:
       group: apps
       version: v1
