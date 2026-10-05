@@ -56,6 +56,8 @@ CNPG IAM role.
   environment (`tools/functional-test.sh`).
 - `docs/operations/new-cluster-deployment.md`: guarded end-to-end checklist for
   bootstrapping and accepting a new OpenShift environment.
+- `docs/operations/rds-debug-client.md`: on-demand, read-only psql client for
+  production RDS diagnostics.
 - `docs/operations/key-concurrency-test.md`: secure 200-key auth/inference
   concurrency ramp and metering-reconciliation procedure.>>>>>>> ade4bf2 (feat(tools): add secure 200-key concurrency harness)
 - `docs/operations/image-provenance.md`: image source and release requirements.

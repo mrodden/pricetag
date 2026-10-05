@@ -1,0 +1,83 @@
+# Optional psql client for EnMaaS RDS diagnostics. Not part of any kustomize
+# overlay: operators scale it explicitly when needed. The only database
+# credential mounted is metering_reader, so accidental writes fail closed.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rds-debug
+  namespace: enmaas
+  labels:
+    app.kubernetes.io/name: rds-debug
+    app.kubernetes.io/part-of: enmaas
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rds-debug
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rds-debug
+        app.kubernetes.io/part-of: enmaas
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: psql
+          # PostgreSQL 16 Alpine multi-arch image index, pinned 2026-10-03.
+          image: docker.io/library/postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+          imagePullPolicy: IfNotPresent
+          command: [sh, -c]
+          args: ["while true; do sleep 3600; done"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: metering-readonly-db-url
+                  key: READ_DATABASE_URL
+            - name: HOME
+              value: /tmp
+            - name: PSQL_HISTORY
+              value: /tmp/.psql_history
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Mi
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: enmaas-allow-rds-debug-egress
+  namespace: enmaas
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: rds-debug
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.0.4.0/24
+      ports:
+        - protocol: TCP
+          port: 5432
