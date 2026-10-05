@@ -179,7 +179,7 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
       "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
       fail "router Role for $tls_secret must grant only get/list/watch on that Secret"
     fi
-  done < <(printf '%s\t%s\n' "$GATEWAY_HOST" api-enmaas-tls "$DASHBOARD_HOST" dashboard-enmaas-tls)
+  done < <(printf '%s\t%s\n' "$GATEWAY_HOST" enmaas-public-tls "$DASHBOARD_HOST" enmaas-public-tls)
   if yq -e 'select(.kind == "Secret" and .type == "kubernetes.io/tls")' "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
     fail "TLS Secrets must not be rendered from the repository"
   fi

@@ -36,11 +36,9 @@ patches:
       kind: Route
       metadata:
         name: dashboard
-  # Every Route on the public gateway and dashboard hosts carries the host
-  # certificate itself. The router serves one certificate per host, taken from
-  # an admitted Route that has one; if only some Routes carry it, deleting those
-  # breaks TLS for every path. Keeping the reference on all of them removes that
-  # dependency and makes git the single source of truth for the hosts.
+  # Every Route on both public hosts carries the same multi-SAN certificate.
+  # This also mitigates HAProxy 2.8.18 cross-certificate session resumption
+  # until the OpenShift router carries the upstream 2.8.28 backport.
   - target:
       group: route.openshift.io
       version: v1
@@ -50,7 +48,7 @@ patches:
       - op: add
         path: /spec/tls/externalCertificate
         value:
-          name: api-enmaas-tls
+          name: enmaas-public-tls
       - op: add
         path: /spec/tls/insecureEdgeTerminationPolicy
         value: Redirect
@@ -63,7 +61,7 @@ patches:
       - op: add
         path: /spec/tls/externalCertificate
         value:
-          name: dashboard-enmaas-tls
+          name: enmaas-public-tls
       - op: add
         path: /spec/tls/insecureEdgeTerminationPolicy
         value: Redirect
