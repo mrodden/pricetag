@@ -1,0 +1,95 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: enmaas-stage
+
+resources:
+  - maas-api-rbac-binding.yaml
+  - network-policy.yaml
+  - ../../base
+
+images:
+  - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/maas-api
+    newName: image-registry.openshift-image-registry.svc:5000/enmaas-stage/maas-api
+    digest: sha256:420e02951a3033b3ba35b8b5a49c51212d4ff23b50f6c4aa5ac866d678b61669
+  - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/metering-service
+    newName: image-registry.openshift-image-registry.svc:5000/enmaas-stage/metering-service
+    digest: sha256:32e227ef0c91a2c91547948f1c248d8002e7f619e1ecf9d127a68e379ceb56bc
+  - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai
+    newName: image-registry.openshift-image-registry.svc:5000/enmaas-stage/praxis-ai
+    digest: sha256:9e428f977abdb9da4a16ffb4730fddadac137417b7e261f30169607e332238e4
+
+patches:
+  - target: { group: apps, version: v1, kind: Deployment, name: llm-katan }
+    patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata: { name: llm-katan }
+  - target: { version: v1, kind: Service, name: llm-katan }
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata: { name: llm-katan }
+  - target: { group: apps, version: v1, kind: Deployment, name: maas-api }
+    patch: |-
+      - { op: replace, path: /spec/replicas, value: 1 }
+      - op: add
+        path: /spec/strategy
+        value: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: MAAS_SUBSCRIPTION_MODE, value: standalone }
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: METRICS_SECURE, value: "false" }
+  - target: { group: apps, version: v1, kind: Deployment, name: praxis }
+    patch: |-
+      - { op: replace, path: /spec/replicas, value: 1 }
+      - op: add
+        path: /spec/strategy
+        value: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  - target: { group: apps, version: v1, kind: Deployment, name: metering-service }
+    patch: |-
+      - { op: replace, path: /spec/replicas, value: 1 }
+      - { op: replace, path: /spec/template/spec/automountServiceAccountToken, value: true }
+      - op: add
+        path: /spec/strategy
+        value: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: M2M_AUTH_REQUIRED, value: "false" }
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: USER_MANAGEMENT_API_SECRET, valueFrom: { secretKeyRef: { name: metering-user-management-api, key: token } } }
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: USAGE_REPORT_API_SECRET, valueFrom: { secretKeyRef: { name: metering-partner-api, key: usage-report } } }
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: USAGE_REPORT_API_SECRET_AIR, valueFrom: { secretKeyRef: { name: metering-partner-api, key: usage-report-air } } }
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: USAGE_REPORT_API_SECRET_AIBT, valueFrom: { secretKeyRef: { name: metering-partner-api, key: usage-report-aibt } } }
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: MODEL_POLICY_API_SECRET, valueFrom: { secretKeyRef: { name: metering-partner-api, key: model-policy } } }
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: MODEL_POLICY_API_SECRET_AIBT, valueFrom: { secretKeyRef: { name: metering-partner-api, key: model-policy-aibt } } }
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: MODEL_CATALOG_API_SECRET, valueFrom: { secretKeyRef: { name: metering-partner-api, key: model-catalog } } }
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: MODEL_CATALOG_API_SECRET_AIBT, valueFrom: { secretKeyRef: { name: metering-partner-api, key: model-catalog-aibt } } }
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: PARTNER_USER_KEY_GROUP, value: GE }
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: READ_DATABASE_URL, valueFrom: { secretKeyRef: { name: metering-readonly-db-url, key: READ_DATABASE_URL } } }
+  - target: { group: route.openshift.io, version: v1, kind: Route, name: dashboard }
+    patch: |-
+      - { op: add, path: /spec/host, value: "${DASHBOARD_HOST}" }
+      - { op: add, path: /spec/tls/insecureEdgeTerminationPolicy, value: Redirect }

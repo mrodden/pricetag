@@ -69,7 +69,7 @@ grep -q 'pricetag.io/praxis-config-checksum' deploy/openshift/deploy.sh
 grep -q 'PREFLIGHT_ONLY' deploy/openshift/deploy.sh
 
 echo "== Kustomize profiles =="
-for profile in test dogfood enmaas; do
+for profile in test dogfood enmaas stage; do
   kubectl kustomize "deploy/openshift/overlays/$profile" >"$TMP_DIR/$profile.yaml"
   yq eval '.' "$TMP_DIR/$profile.yaml" >/dev/null
 done

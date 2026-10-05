@@ -1,0 +1,50 @@
+# Temporary build egress for enmaas-stage. Workload-specific policies replace
+# this broad HTTPS rule before the application deployment is accepted.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: enmaas-stage-allow-build-egress
+  namespace: enmaas-stage
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 172.30.0.10/32
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+          podSelector:
+            matchLabels:
+              dns.operator.openshift.io/daemonset-dns: default
+      ports:
+        - { protocol: UDP, port: 5353 }
+        - { protocol: TCP, port: 5353 }
+    # Build pods update Build status through both the kubernetes Service and
+    # its direct control-plane endpoint on this temporary stage cluster.
+    - to:
+        - ipBlock:
+            cidr: 172.30.0.1/32
+      ports:
+        - { protocol: TCP, port: 443 }
+    - to:
+        - ipBlock:
+            cidr: 172.20.0.1/32
+      ports:
+        - { protocol: TCP, port: 6443 }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-image-registry
+      ports:
+        - { protocol: TCP, port: 5000 }
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - { protocol: TCP, port: 443 }

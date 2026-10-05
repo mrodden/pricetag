@@ -38,6 +38,28 @@ Application installation is a separate reviewed step. Before it is allowed:
 5. Use generated partner/API/session secrets and a stage-only test identity.
 6. Run the functional suite against stage before exposing it to Atlas.
 
+Pinned image builds are codified under `stage-bootstrap/20-image-builds.yaml`:
+
+```bash
+CONFIRM_STAGE_IMAGE_BUILDS=true ./tools/build-temporary-stage-images.sh
+```
+
+The build script is hard-pinned to `models-arch-ocp`, runs builds serially
+under the namespace quota, verifies digest references, and records them in the
+`enmaas-stage-images` ConfigMap for the workload render.
+
+Deploy the generated-secret, single-CNPG-instance workload set with:
+
+```bash
+CONFIRM_STAGE_WORKLOAD_DEPLOY=true ./tools/deploy-temporary-stage.sh
+```
+
+The script refuses production, installs cluster prerequisites only on
+`models-arch-ocp`, performs a server-side dry-run and `oc diff`, and waits for
+all three application Deployments. Provider credentials are disabled stage
+placeholders; this environment initially supports API/auth/database integration,
+not paid inference.
+
 ## Teardown
 
 Delete `enmaas-stage` after AppSRE stage is usable, then confirm its PVCs and

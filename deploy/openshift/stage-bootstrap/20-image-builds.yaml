@@ -1,0 +1,86 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: maas-api
+  namespace: enmaas-stage
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: enmaas-stage-maas-api
+  namespace: enmaas-stage
+spec:
+  runPolicy: Serial
+  source:
+    type: Git
+    git:
+      uri: https://github.com/opendatahub-io/models-as-a-service.git
+      ref: 1238aafad7b780dc77048aa10a5249cdbb8af69f
+    contextDir: maas-api
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  output:
+    to: { kind: ImageStreamTag, name: "maas-api:stage-1238aafa" }
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { cpu: "2", memory: 4Gi }
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: metering-service
+  namespace: enmaas-stage
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: enmaas-stage-metering
+  namespace: enmaas-stage
+spec:
+  runPolicy: Serial
+  source:
+    type: Git
+    git:
+      uri: https://github.com/redhat-et/pricetag-metering.git
+      ref: 1995f1889795c641701eadce1642deacb2d7d7f0
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  output:
+    to: { kind: ImageStreamTag, name: "metering-service:stage-1995f188" }
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { cpu: "2", memory: 4Gi }
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: praxis-ai
+  namespace: enmaas-stage
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: enmaas-stage-praxis
+  namespace: enmaas-stage
+spec:
+  runPolicy: Serial
+  source:
+    type: Git
+    git:
+      uri: https://github.com/redhat-et/praxis-ai.git
+      ref: ae9821f838639ec4a0d24535ad4b12e8176e4ecd
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Containerfile
+      buildArgs:
+        - { name: PRAXIS_AI_FEATURES, value: "full,gcp-adc-filter" }
+  output:
+    to: { kind: ImageStreamTag, name: "praxis-ai:stage-ae9821f8" }
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { cpu: "2", memory: 4Gi }

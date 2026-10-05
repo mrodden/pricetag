@@ -1,0 +1,19 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: aigateway-pg
+  namespace: enmaas-stage
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.12
+  bootstrap:
+    initdb:
+      database: aigateway
+      secret:
+        name: aigateway-db-app
+  storage:
+    size: 10Gi
+    storageClassName: gp3-csi
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: "1", memory: 1Gi }

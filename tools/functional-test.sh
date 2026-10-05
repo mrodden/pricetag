@@ -146,7 +146,11 @@ curl_json() {
   rm -f "$cfg"
   echo "$got"
 }
-jcheck() { python3 -c "$1" "$2" >/dev/null 2>&1; }
+jcheck() {
+  local code="$1"
+  shift
+  python3 -c "$code" "$@" >/dev/null 2>&1
+}
 
 echo "EnMaaS functional tests — level=$LEVEL target=${TARGET:-custom}"
 echo "  gateway=$GATEWAY"
@@ -163,11 +167,10 @@ for h in "$GATEWAY_HOST" "$DASHBOARD_HOST"; do
 
   cert="$WORK/cert-$h.pem"
   if echo | timeout "$TIMEOUT" openssl s_client -connect "$h:443" -servername "$h" 2>/dev/null \
-      | openssl x509 -noout -text >"$cert" 2>/dev/null; then
-    if grep -A1 'Subject Alternative Name' "$cert" | grep -q "DNS:$h"; then pass "tls SAN covers $h"
+      | openssl x509 -out "$cert" 2>/dev/null; then
+    if openssl x509 -in "$cert" -noout -checkhost "$h" 2>/dev/null | grep -q 'does match certificate'; then pass "tls SAN covers $h"
     else fail "tls SAN does not cover $h"; fi
-    end="$(echo | timeout "$TIMEOUT" openssl s_client -connect "$h:443" -servername "$h" 2>/dev/null \
-      | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)"
+    end="$(openssl x509 -in "$cert" -noout -enddate 2>/dev/null | cut -d= -f2)"
     if [[ -n "$end" ]]; then
       left=$(( ( $(date -d "$end" +%s) - $(date +%s) ) / 86400 ))
       if [[ "$left" -ge "$MIN_CERT_DAYS" ]]; then pass "tls cert $h valid ${left}d"
@@ -301,21 +304,24 @@ assert b["data"][0]["type"]=="model" and "has_more" in b
 ' "$WORK/models-anthropic.json"; then pass "catalog/anthropic envelope"
     else fail "catalog/anthropic envelope (http $got)"; fi
 
-    # The models this suite exercises must actually be offered.
-    for m in "$MODEL_FREE" "$MODEL_ANTHROPIC" "$MODEL_OPENAI"; do
+    # Each model must be advertised in the dialect through which the suite
+    # calls it. Hosted GLM supports both; Claude is Messages-only; GPT is
+    # OpenAI-only. Requiring every model in the OpenAI envelope hid catalog
+    # routing mistakes and made a correct protocol split fail validation.
+    for spec in \
+      "$MODEL_FREE|$WORK/models-openai.json|openai" \
+      "$MODEL_FREE|$WORK/models-anthropic.json|anthropic" \
+      "$MODEL_ANTHROPIC|$WORK/models-anthropic.json|anthropic" \
+      "$MODEL_OPENAI|$WORK/models-openai.json|openai"; do
+      IFS='|' read -r m catalog dialect <<<"$spec"
       if jcheck '
 import json,sys
 b=json.load(open(sys.argv[1]))
 ids={d.get("id") for d in b.get("data",[])}
 assert sys.argv[2] in ids
-' "$WORK/models-openai.json" "$m" 2>/dev/null || \
-         python3 -c '
-import json,sys
-b=json.load(open(sys.argv[1]))
-ids={d.get("id") for d in b.get("data",[])}
-sys.exit(0 if sys.argv[2] in ids else 1)' "$WORK/models-openai.json" "$m" 2>/dev/null
-      then pass "catalog offers $m"
-      else fail "catalog does not offer $m"; fi
+' "$catalog" "$m"
+      then pass "catalog/$dialect offers $m"
+      else fail "catalog/$dialect does not offer $m"; fi
     done
 
     # A key must never be echoed back to the caller.
