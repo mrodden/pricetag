@@ -26,11 +26,11 @@ for deployment in maas-api metering-service praxis; do
   [[ "$image" == *@sha256:* ]] || die "$deployment image is not digest pinned"
 done
 
-for secret in api-enmaas-tls dashboard-enmaas-tls metering-internal-auth \
+for secret in enmaas-public-tls api-enmaas-tls dashboard-enmaas-tls metering-internal-auth \
   metering-partner-api metering-user-management-api; do
   oc -n "$ns" get secret "$secret" >/dev/null || die "required Secret missing: $secret"
 done
-for secret in api-enmaas-tls dashboard-enmaas-tls; do
+for secret in enmaas-public-tls; do
   [[ "$(oc -n "$ns" get secret "$secret" -o jsonpath='{.type}')" == kubernetes.io/tls ]] || \
     die "$secret is not kubernetes.io/tls"
   oc auth can-i --as=system:serviceaccount:openshift-ingress:router \

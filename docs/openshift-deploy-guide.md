@@ -247,13 +247,15 @@ Do not invent model references or rate limits in the deployment script.
 
 `api.enmaas.devshift.net` and `dashboard.enmaas.devshift.net` are outside the
 cluster wildcard, so every Route on them terminates edge TLS with
-`spec.tls.externalCertificate` pointing at the `kubernetes.io/tls` Secrets
-`api-enmaas-tls` and `dashboard-enmaas-tls`. Those Secrets are created and
-renewed out of band and are never committed; the rendered overlay only
-references them and grants the `openshift-ingress` router service account
-`get/list/watch` on exactly those two Secrets. `deploy.sh` refuses to apply the
-EnMaaS profile while either Secret is missing, because the router does not admit
-a Route whose certificate Secret cannot be read.
+`spec.tls.externalCertificate` pointing at the shared `kubernetes.io/tls`
+Secret `enmaas-public-tls`. Its certificate contains both hostnames. This is an
+immediate mitigation for HAProxy 2.8.18 cross-certificate session resumption;
+the supported router still needs the 2.8.28 backport. cert-manager creates and
+renews the Secret, which is never committed; the overlay only references it and
+grants the `openshift-ingress` router service account `get/list/watch` on that
+Secret. `deploy.sh` refuses to apply the EnMaaS profile while it is missing.
+The previous `api-enmaas-tls` and `dashboard-enmaas-tls` Secrets remain during
+the rollback window but are no longer referenced by public Routes.
 
 Every Route on a host must carry the reference. The router serves one
 certificate per host, taken from an admitted Route that has one; a mixed set

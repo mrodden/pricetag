@@ -1,7 +1,9 @@
 # Public TLS certificates for the EnMaaS hostnames.
 #
-# deploy.sh refuses to apply the Routes unless api-enmaas-tls and
-# dashboard-enmaas-tls already exist as kubernetes.io/tls Secrets. These
+# deploy.sh refuses to apply the Routes unless enmaas-public-tls exists as a
+# kubernetes.io/tls Secret. It covers both public hostnames so the router uses
+# one certificate context for API and dashboard traffic. The older per-host
+# certificates remain temporarily as rollback material. These
 # Certificate resources are what create and then continuously renew them -
 # the Secrets are issued by cert-manager, not hand-built, and must not be
 # edited or replaced by hand (the controller will overwrite the contents).
@@ -26,7 +28,40 @@
 # this cluster's router. The records live in app-interface
 # (data/aws/app-sre/dns/devshift.net.yaml, app-sre account), so DNS must be in
 # place before issuance will succeed.
+#
+# Shared SAN certificate: immediate mitigation for HAProxy BUG/MEDIUM
+# edf6e39, backported in 2.8.28. OCP 4.22.15 carries HAProxy 2.8.18 and can
+# resume a TLS session across different certificate contexts. Serving the same
+# certificate for both EnMaaS names prevents the observed hostname mismatch;
+# the router update is still required for router-wide isolation.
 ---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: enmaas-public-devshift-net
+  labels:
+    app.kubernetes.io/part-of: enmaas
+spec:
+  secretName: enmaas-public-tls
+  commonName: ${GATEWAY_HOST}
+  dnsNames:
+    - ${GATEWAY_HOST}
+    - ${DASHBOARD_HOST}
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  duration: 2160h
+  renewBefore: 720h
+  secretTemplate:
+    labels:
+      app.kubernetes.io/part-of: enmaas
+      enmaas.redhat.com/tls-purpose: public-shared-san
+---
+# Legacy per-host certificate retained during the mitigation rollback window.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:

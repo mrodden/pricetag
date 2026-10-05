@@ -158,19 +158,19 @@ done <<<"$dashboard_paths"
     "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
   done
 
-# Every Route on a public host carries that host's certificate, so no single
-# Route (or Route set) is the hidden holder of TLS for the host.
-if yq -e 'select(.kind == "Route" and .spec.host == "'"$GATEWAY_HOST"'" and .spec.tls.externalCertificate.name != "api-enmaas-tls")' \
+# Every Route on both public hosts carries the shared multi-SAN certificate,
+# so no Route is a hidden TLS holder and cross-host resumption stays valid.
+if yq -e 'select(.kind == "Route" and .spec.host == "'"$GATEWAY_HOST"'" and .spec.tls.externalCertificate.name != "enmaas-public-tls")' \
   "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
-  echo "a gateway Route does not reference api-enmaas-tls" >&2
+  echo "a gateway Route does not reference enmaas-public-tls" >&2
   exit 1
 fi
-if yq -e 'select(.kind == "Route" and .spec.host == "'"$DASHBOARD_HOST"'" and .spec.tls.externalCertificate.name != "dashboard-enmaas-tls")' \
+if yq -e 'select(.kind == "Route" and .spec.host == "'"$DASHBOARD_HOST"'" and .spec.tls.externalCertificate.name != "enmaas-public-tls")' \
   "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
-  echo "a dashboard Route does not reference dashboard-enmaas-tls" >&2
+  echo "a dashboard Route does not reference enmaas-public-tls" >&2
   exit 1
 fi
-for tls_secret in api-enmaas-tls dashboard-enmaas-tls; do
+for tls_secret in enmaas-public-tls; do
   yq -e 'select(.kind == "Role" and .metadata.name == "router-read-'"$tls_secret"'") | .rules[] | select(.resources[] == "secrets" and .resourceNames[] == "'"$tls_secret"'")' \
     "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
   yq -e 'select(.kind == "RoleBinding" and .metadata.name == "router-read-'"$tls_secret"'") | .subjects[] | select(.kind == "ServiceAccount" and .name == "router" and .namespace == "openshift-ingress")' \

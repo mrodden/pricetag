@@ -197,7 +197,7 @@ if [[ "$PREFLIGHT_ONLY" == true ]]; then
     > "$RENDER_DIR/with-vertex.yaml"
   envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_DIGEST} \${METERING_IMAGE_DIGEST} \${RDS_EGRESS_CIDR} \${KUBE_DNS_SERVICE_IP} \${KUBE_API_SERVICE_IP} \${KUBE_API_ENDPOINT_IP}" \
     < "$RENDER_DIR/with-vertex.yaml" > "$RENDER_DIR/final.yaml"
-  for tls_secret in api-enmaas-tls dashboard-enmaas-tls; do
+  for tls_secret in enmaas-public-tls; do
     [[ "$(oc -n "$NAMESPACE" get secret "$tls_secret" -o jsonpath='{.type}' 2>/dev/null)" == kubernetes.io/tls ]] || \
       die "TLS secret $tls_secret (type kubernetes.io/tls) is missing"
   done
@@ -581,7 +581,7 @@ envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \
 # The router rejects a Route whose Secret is missing, so refuse to apply rather
 # than leave the hosts on an unadmitted Route set.
 if [[ "$PROFILE" == enmaas ]]; then
-  for tls_secret in api-enmaas-tls dashboard-enmaas-tls; do
+  for tls_secret in enmaas-public-tls; do
     [[ "$(oc -n "$NAMESPACE" get secret "$tls_secret" -o jsonpath='{.type}' 2>/dev/null)" == kubernetes.io/tls ]] || \
       die "TLS secret $tls_secret (type kubernetes.io/tls) must exist in $NAMESPACE before Routes can reference it"
   done
