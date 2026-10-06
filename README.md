@@ -54,6 +54,8 @@ CNPG IAM role.
   `404`/`400`/empty-content client errors.
 - `docs/operations/functional-tests.md`: tiered tests against a deployed
   environment (`tools/functional-test.sh`).
+- `docs/operations/enmaas-metering-rolling-update.md`: Metering-only AMD64
+  build, internal-registry push, zero-unavailable rollout, validation, and rollback.
 - `docs/operations/new-cluster-deployment.md`: guarded end-to-end checklist for
   bootstrapping and accepting a new OpenShift environment.
 - `docs/operations/rds-debug-client.md`: on-demand, read-only psql client for
