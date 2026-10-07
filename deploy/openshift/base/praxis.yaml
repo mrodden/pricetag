@@ -91,6 +91,8 @@ data:
 
           - filter: token_count
             provider: openai
+
+          - filter: time_to_first_token
             # Codex Responses and OpenAI-compatible hosted models ride this
             # listener: response.completed
             # embeds the full response object and routinely exceeds the 64 KiB
@@ -180,6 +182,8 @@ data:
 
           - filter: token_count
             provider: anthropic
+
+          - filter: time_to_first_token
 
           - filter: token_usage_headers
 
@@ -350,6 +354,8 @@ data:
           # request path so both are metered instead of only Anthropic's.
           - filter: token_count
             provider: auto
+
+          - filter: time_to_first_token
             # Responses-API SSE events embed the full response object and
             # routinely exceed the 64 KiB default; match the old binary's
             # hardcoded 1 MiB scratch so Qwen-via-Codex usage still meters.
