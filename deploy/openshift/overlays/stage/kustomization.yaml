@@ -93,3 +93,35 @@ patches:
     patch: |-
       - { op: add, path: /spec/host, value: "${DASHBOARD_HOST}" }
       - { op: add, path: /spec/tls/insecureEdgeTerminationPolicy, value: Redirect }
+  - target: { group: apps, version: v1, kind: Deployment, name: maas-api }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/nodeSelector
+        value: { enmaas-stage: "true" }
+      - op: add
+        path: /spec/template/spec/tolerations
+        value: [{ key: dedicated, operator: Equal, value: enmaas-stage, effect: NoSchedule }]
+  - target: { group: apps, version: v1, kind: Deployment, name: metering-service }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/nodeSelector
+        value: { enmaas-stage: "true" }
+      - op: add
+        path: /spec/template/spec/tolerations
+        value: [{ key: dedicated, operator: Equal, value: enmaas-stage, effect: NoSchedule }]
+  - target: { group: apps, version: v1, kind: Deployment, name: praxis }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/nodeSelector
+        value: { enmaas-stage: "true" }
+      - op: add
+        path: /spec/template/spec/tolerations
+        value: [{ key: dedicated, operator: Equal, value: enmaas-stage, effect: NoSchedule }]
+  - target: { group: postgresql.cnpg.io, version: v1, kind: Cluster, name: aigateway-pg }
+    patch: |-
+      - op: add
+        path: /spec/affinity/nodeSelector
+        value: { enmaas-stage: "true" }
+      - op: add
+        path: /spec/affinity/tolerations
+        value: [{ key: dedicated, operator: Equal, value: enmaas-stage, effect: NoSchedule }]
