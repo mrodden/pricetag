@@ -195,7 +195,7 @@ if [[ "$PREFLIGHT_ONLY" == true ]]; then
   python3 "$SCRIPT_DIR/render-enmaas-vertex.py" \
     "$RENDER_DIR/manifests.yaml" "$PROFILE_DIR/vertex-fragments" \
     > "$RENDER_DIR/with-vertex.yaml"
-  envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_DIGEST} \${METERING_IMAGE_DIGEST} \${RDS_EGRESS_CIDR} \${KUBE_DNS_SERVICE_IP} \${KUBE_API_SERVICE_IP} \${KUBE_API_ENDPOINT_IP}" \
+  envsubst "\${NAMESPACE} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_DIGEST} \${METERING_IMAGE_DIGEST} \${RDS_EGRESS_CIDR} \${KUBE_DNS_SERVICE_IP} \${KUBE_API_SERVICE_IP} \${KUBE_API_ENDPOINT_IP}" \
     < "$RENDER_DIR/with-vertex.yaml" > "$RENDER_DIR/final.yaml"
   for tls_secret in enmaas-public-tls; do
     [[ "$(oc -n "$NAMESPACE" get secret "$tls_secret" -o jsonpath='{.type}' 2>/dev/null)" == kubernetes.io/tls ]] || \
@@ -346,7 +346,7 @@ fi
 
 if ! config_exists pricetag-config || [[ "$UPDATE_CONFIG" == true ]]; then
   for name in ADMIN_USERS SUPERADMIN_USERS MAAS_SECURE MAAS_DEBUG_MODE \
-    QWEN_ENDPOINT CB_GLM_ENDPOINT; do
+    CB_GLM_ENDPOINT; do
     [[ -n "${!name:-}" ]] || die "$name is required to create pricetag-config"
   done
   oc -n "$NAMESPACE" create configmap pricetag-config \
@@ -574,7 +574,7 @@ if [[ "$PROFILE" == enmaas ]]; then
     > "$RENDER_DIR/with-vertex.yaml"
   mv "$RENDER_DIR/with-vertex.yaml" "$RENDER_DIR/manifests.yaml"
 fi
-envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_DIGEST} \${METERING_IMAGE_DIGEST} \${RDS_EGRESS_CIDR} \${KUBE_DNS_SERVICE_IP} \${KUBE_API_SERVICE_IP} \${KUBE_API_ENDPOINT_IP}" \
+envsubst "\${NAMESPACE} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_DIGEST} \${METERING_IMAGE_DIGEST} \${RDS_EGRESS_CIDR} \${KUBE_DNS_SERVICE_IP} \${KUBE_API_SERVICE_IP} \${KUBE_API_ENDPOINT_IP}" \
   < "$RENDER_DIR/manifests.yaml" > "$RENDER_DIR/final.yaml"
 
 # The public-host Routes reference certificates through externalCertificate.

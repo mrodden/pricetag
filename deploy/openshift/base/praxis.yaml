@@ -65,10 +65,6 @@ data:
             routes:
               - path_prefix: "/"
                 headers:
-                  x-model: "Inferact/Qwen3.8-Flash-Next-NVFP4"
-                cluster: qwen-flash
-              - path_prefix: "/"
-                headers:
                   x-model: "rits/zai-org/glm-5-3"
                 cluster: cb-glm
               - path_prefix: "/"
@@ -121,9 +117,6 @@ data:
 
           - filter: credential_injection
             clusters:
-              - name: qwen-flash
-                header: Host
-                value: "${QWEN_ENDPOINT}"
               - name: cb-glm
                 header: Host
                 value: "${CB_GLM_ENDPOINT}"
@@ -137,12 +130,6 @@ data:
                 idle_timeout_ms: 45000
                 endpoints:
                   - "api.openai.com:443"
-              - name: qwen-flash
-                tls:
-                  sni: "${QWEN_ENDPOINT}"
-                idle_timeout_ms: 45000
-                endpoints:
-                  - "${QWEN_ENDPOINT}:443"
               - name: cb-glm
                 tls:
                   sni: "${CB_GLM_ENDPOINT}"
@@ -197,7 +184,7 @@ data:
                   - "llm-katan:8000"
 
       # Anthropic Messages pipeline for the public gateway host. This chain
-      # routes Claude/Qwen/GLM models while the path-specific OpenAI listener
+      # routes Claude/GLM models while the path-specific OpenAI listener
       # handles Chat Completions and Responses.
       - name: unified
         filters:
@@ -235,9 +222,6 @@ data:
                   headers:
                     anthropic-version: "2023-06-01"
             models:
-              - id: Inferact/Qwen3.8-Flash-Next-NVFP4
-                display_name: "Qwen 3.8 Flash Next (hosted, $0.15/$0.47 per MTok)"
-                owned_by: vllm
               - id: claude-opus-4-8
                 display_name: "Claude Opus 4.8"
               - id: claude-sonnet-5
@@ -261,8 +245,6 @@ data:
                 owned_by: openai
               - id: gpt-5.6-luna
                 owned_by: openai
-              - id: Inferact/Qwen3.8-Flash-Next-NVFP4
-                owned_by: vllm
               - id: rits/zai-org/glm-5-3
                 owned_by: curvebender
 
@@ -299,12 +281,6 @@ data:
           - filter: router
             routes:
               # ENMAAS_VERTEX_ROUTER_ROUTE
-              # Self-hosted Qwen, direct to vLLM; everything else (claude-*)
-              # falls through to the anthropic default.
-              - path_prefix: "/"
-                headers:
-                  x-model: "Inferact/Qwen3.8-Flash-Next-NVFP4"
-                cluster: qwen-flash
               # Curvebender GLM-5.3 (LiteLLM, Anthropic-dialect translation
               # verified live 2026-09-21; see praxis-runbooks).
               - path_prefix: "/"
@@ -316,21 +292,11 @@ data:
 
           # ENMAAS_VERTEX_GCP_CREDENTIAL_FILTER
 
-          # Rewrite content block types that vLLM's Anthropic endpoint
-          # rejects (server_tool_use, server_tool_result) and that Qwen's
-          # chat template chokes on (tool_reference inside tool_result).
-          # Harmless for Anthropic-routed requests.
+          # Rewrite content block types that some Anthropic-dialect
+          # endpoints reject (server_tool_use, server_tool_result,
+          # tool_reference inside tool_result). Harmless for
+          # Anthropic-routed requests.
           - filter: content_normalize
-
-          # Qwen's chat template only understands xhigh/medium/low and
-          # 400s on the high/minimal values OpenAI-style clients send by
-          # default (Claude Code effortLevel, Codex reasoning.effort).
-          # Scoped by body model (the only scope visible from a body
-          # hook — the cluster is not yet selected when body filters
-          # run); the gpt lineup legitimately accepts high. Any new
-          # model added to the qwen-flash route needs adding here too.
-          - filter: reasoning_effort_map
-            models: ["Inferact/Qwen3.8-Flash-Next-NVFP4"]
 
           - filter: external_metering
             metering_url: "http://metering-service:8080"
@@ -345,14 +311,14 @@ data:
             # ENMAAS_METERING_MODEL_POLICY
             default_model: "unknown"
 
-          # Anthropic (Messages SSE) and Qwen-via-Codex (Responses SSE) report
+          # Anthropic (Messages SSE) and OpenAI-compatible (Responses SSE) report
           # usage in different envelopes; provider: auto picks the dialect per
           # request path so both are metered instead of only Anthropic's.
           - filter: token_count
             provider: auto
             # Responses-API SSE events embed the full response object and
             # routinely exceed the 64 KiB default; match the old binary's
-            # hardcoded 1 MiB scratch so Qwen-via-Codex usage still meters.
+            # hardcoded 1 MiB scratch so Responses-API usage still meters.
             max_scratch_bytes: 1048576
 
           - filter: token_usage_headers
@@ -375,8 +341,6 @@ data:
 
           - filter: headers
             request_set:
-              - name: "Host"
-                value: "${QWEN_ENDPOINT}"
               - name: "anthropic-version"
                 value: "2023-06-01"
             request_remove:
@@ -384,8 +348,7 @@ data:
 
           # Override Host for Anthropic: extra_request_headers (from
           # credential_injection) are applied after headers_to_set, so
-          # this wins for anthropic-routed requests while qwen-flash
-          # keeps the direct vLLM host set above.
+          # this wins for anthropic-routed requests.
           - filter: credential_injection
             clusters:
               - name: anthropic
@@ -404,12 +367,6 @@ data:
                 idle_timeout_ms: 45000
                 endpoints:
                   - "api.anthropic.com:443"
-              - name: qwen-flash
-                tls:
-                  sni: "${QWEN_ENDPOINT}"
-                idle_timeout_ms: 45000
-                endpoints:
-                  - "${QWEN_ENDPOINT}:443"
               - name: cb-glm
                 tls:
                   sni: "${CB_GLM_ENDPOINT}"
